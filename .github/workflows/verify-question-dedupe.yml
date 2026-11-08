@@ -1,0 +1,65 @@
+name: Verify duplicate-question guard
+on:
+  push:
+    branches: [fix/skip-duplicate-ai-questions]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: API clean install, compile, tests
+        working-directory: apps/api
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+          npm test
+      - name: Nuxt compile
+        working-directory: apps/web
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Real PostgreSQL dedupe smoke test
+        run: |
+          cp .env.example .env
+          docker compose up -d --build --wait
+          docker compose exec -T api node <<'NODE'
+          const assert = require('node:assert/strict');
+          const { PrismaClient } = require('@prisma/client');
+          const provider = require('./dist/ai/provider');
+          const { processJob } = require('./dist/process-job');
+          const db = new PrismaClient();
+          const random = Date.now().toString();
+          const newQ = (prompt, kind) => ({
+            prompt, kind, key:'A valid answer', quote:'A quote', hint:'Think',
+            rubric:'Reason using the source',
+          });
+          provider.ask = async () => ({});
+          provider.verifyQuestions = () => [
+            newQ('Desirable  Difficulties คืออะไร？','recall'),
+            newQ('Spaced Repetition สำคัญอย่างไร?','explanation'),
+            newQ('spaced repetition สำคัญอย่างไร？','application'),
+          ];
+          (async() => {
+            const u = await db.user.create({ data:{identity:'test-dedupe-'+random,name:'Dedupe Test'} });
+            const g = await db.goal.create({ data:{userId:u.id,title:'Test',domain:'General'} });
+            const t = await db.topic.create({ data:{goalId:g.id,title:'T'} });
+            const s = await db.source.create({ data:{topicId:t.id,title:'S',chunks:['A sample excerpt']} });
+            await db.question.create({data:{topicId:t.id,prompt:'Desirable Difficulties คืออะไร?',key:'old answer',kind:'recall'}});
+            const job = (id) => ({ name:'generate', id, data:{userId:u.id,resourceId:s.id,section:0,minutes:30}});
+            const one = await processJob(db, job('first-'+random));
+            assert.deepEqual(one,{count:1,skipped:2});
+            const two = await processJob(db, job('second-'+random));
+            assert.deepEqual(two,{count:0,skipped:3});
+            const all = await db.question.findMany({where:{topicId:t.id}});
+            assert.equal(all.length,2);
+            console.log('Confirmed: first batch added 1/skipped 2; second added 0/skipped 3');
+          })().catch(e=>{console.error(e);process.exitCode=1}).finally(async()=>{await db.$disconnect()});
+          NODE
+      - name: Diagnose on failure
+        if: failure()
+        run: docker compose logs --tail=80 || true
