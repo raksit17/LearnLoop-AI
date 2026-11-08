@@ -56,6 +56,18 @@ model Source {
   title String
   chunks String[]
   questions Question[]
+  artifacts SourceArtifact[]
+}
+model SourceArtifact {
+  id String @id @default(uuid())
+  sourceId String
+  source Source @relation(fields:[sourceId],references:[id],onDelete:Cascade)
+  section Int
+  kind String
+  payload Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([sourceId,section,kind])
 }
 model Question {
   id String @id @default(uuid())
