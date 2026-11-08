@@ -223,7 +223,12 @@ async function start() {
               </option>
             </select></label
           >
-          <article class="excerpt">{{ source.chunks[section] }}</article>
+          <SourceReader
+            :key="source.id + ':' + section"
+            :source="source"
+            :section="section"
+            :ai-ready="health.ai"
+          />
           <button :disabled="busy || !health.ai" @click="run(generate)">
             สร้าง 3 คำถามด้วย AI</button
           ><small>ใช้เฉพาะข้อความส่วนที่เลือก</small></template
