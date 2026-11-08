@@ -251,6 +251,7 @@ async function start() {
         </details>
       </section>
     </div>
+    <QuestionBank />
     <section class="card" v-if="!active">
       <h2>วางแผนรอบเรียน</h2>
       <label
