@@ -71,7 +71,7 @@ jobs:
             assert.equal(calls,2,"cache avoids extra AI calls");
             const count=await db.sourceArtifact.count({where:{sourceId:s.id}});
             assert.equal(count,2);
-            const base="http://127.0.0.1:4318/v1/sources/"+s.id+"/artifacts";
+            const base="http://web:3000/v1/sources/"+s.id+"/artifacts";
             const response=await fetch(base+"?section=0&kind=reading_aid");
             assert.equal(response.status,200);
             const data=await response.json();
