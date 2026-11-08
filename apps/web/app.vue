@@ -119,7 +119,8 @@ async function logout() {
       </nav>
       <footer>
         {{ data.user.name }}
-        <button class="light" @click="run(logout)">ออก</button>
+        <span v-if="health.demo" class="demo-label">โหมดทดลอง (ไม่ต้องเข้าสู่ระบบ)</span>
+        <button v-else class="light" @click="run(logout)">ออก</button>
       </footer>
     </aside>
     <main>

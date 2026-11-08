@@ -5,7 +5,7 @@ export function useLoop() {
     page = useState("page", () => "home"),
     qId = useState("question", () => ""),
     message = useState("notice", () => "");
-  const health = useState("health", () => ({ ai: false, oidc: false }));
+  const health = useState("health", () => ({ ai: false, oidc: false, demo: false }));
   async function api(path: string, body?: any) {
     const isFile = body instanceof FormData;
     const r = await fetch(

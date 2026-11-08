@@ -90,6 +90,12 @@ nav .selected {
 footer {
   margin-top: auto;
 }
+.demo-label {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+  color: #536b58;
+}
 main {
   padding: 28px clamp(18px, 4vw, 64px);
   max-width: 1450px;
