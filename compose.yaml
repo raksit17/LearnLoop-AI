@@ -6,6 +6,8 @@ x-backend: &backend
   environment:
     DATABASE_URL: postgresql://learnloop:${POSTGRES_PASSWORD:-learnloop_local}@db:5432/learnloop
     REDIS_HOST: redis
+    # Local testing only; effective exclusively with a loopback PUBLIC_URL.
+    DEV_AUTH_BYPASS: ${DEV_AUTH_BYPASS:-true}
     OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
     OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3.5:4b-q4_K_M}
   depends_on:
