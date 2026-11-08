@@ -3,7 +3,7 @@ import "reflect-metadata";
 import { PrismaClient } from "@prisma/client";
 import { createHash } from "node:crypto";
 import { Payload } from "./ai/queue";
-import { ask, verifyQuestions, verifyFeedback, plan } from "./ai/provider";
+import { ask, verifyQuestions, verifyFeedback, plan, readingAid, mindMap } from "./ai/provider";
 import { minutes } from "./engine";
 import { selectUniqueQuestions } from "./question-dedupe";
 
@@ -55,6 +55,28 @@ export async function processJob(
         : { count: 0 };
       return { count: inserted.count, skipped: batch.length - inserted.count };
     });
+  }
+  if (job.name === "reading-aid" || job.name === "mindmap") {
+    // Always verify ownership, even when the result is already cached.
+    const source = await db.source.findFirstOrThrow({
+      where: { id: resourceId, topic: { goal: { userId } } },
+      include: { topic: true },
+    });
+    const excerpt = source.chunks[section];
+    if (typeof excerpt !== "string") throw Error("ไม่มีเนื้อหาส่วนนี้");
+    const kind = job.name === "reading-aid" ? "reading_aid" : "mindmap";
+    const where = { sourceId_section_kind: { sourceId: source.id, section, kind } };
+    const cached = await db.sourceArtifact.findUnique({ where });
+    if (cached) return { kind, section, payload: cached.payload, cached: true };
+    const generated = await ask(job.name, { title: source.title, topic: source.topic.title, excerpt });
+    const payload = kind === "reading_aid" ? readingAid.parse(generated) : mindMap.parse(generated);
+    // Cache the first valid result. A retry or later visit reuses this artifact.
+    const stored = await db.sourceArtifact.upsert({
+      where,
+      create: { sourceId: source.id, section, kind, payload },
+      update: {},
+    });
+    return { kind, section, payload: stored.payload, cached: false };
   }
   if (job.name === "tutor") {
     const a = await db.attempt.findFirstOrThrow({
