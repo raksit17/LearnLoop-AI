@@ -10,8 +10,8 @@
 4. **โหมดทดลองในเครื่อง (ค่าเริ่มต้น):** เปิดเว็บผ่าน `http://localhost:4318` หรือ `http://127.0.0.1:4318` จะเข้าสู่ผู้เรียนทดลองโดยอัตโนมัติ ไม่ต้องสมัครหรือ Login แล้วสร้างเป้าหมายและหัวข้อแรกได้ทันที ข้อมูลทดลองถูกเก็บแยกจากบัญชีจริงใน PostgreSQL
 5. หากต้องการกลับมาใช้ระบบ Login ให้ตั้ง `DEV_AUTH_BYPASS=false` ใน `.env` แล้วรัน `docker compose up -d --force-recreate api worker` ระบบสมัครบัญชี/เข้าสู่ระบบด้วยรหัสผ่านและ OIDC ยังอยู่เหมือนเดิม หากต้องการใช้บัญชีองค์กร ตั้งค่า OIDC_ISSUER, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET และลงทะเบียน callback `http://localhost:4318/v1/oidc/callback` กับผู้ให้บริการ
    **ความปลอดภัย:** โหมดทดลองเปิดได้เฉพาะเมื่อ `PUBLIC_URL` เป็น HTTP loopback (`localhost` หรือ `127.0.0.1`) และพอร์ตเว็บใน `compose.yaml` ผูกกับ `127.0.0.1` เท่านั้น ห้ามเปิดโหมดนี้บนเซิร์ฟเวอร์สาธารณะ
-5. หลังแก้ .env รัน `docker compose up -d` เพื่อให้ API และ worker อ่านค่าใหม่ ดูสถานะด้วย `docker compose ps` และดูข้อความขัดข้องด้วย `docker compose logs --tail=60 api worker web`
-6. หยุดด้วย `docker compose down` ข้อมูลจะอยู่ใน volumes สำหรับ PostgreSQL และ Redis เปิดอีกครั้งด้วยตัวเปิดเดิม
+6. หลังแก้ .env รัน `docker compose up -d --force-recreate api worker` เพื่อให้ API และ worker อ่านค่าใหม่ ดูสถานะด้วย `docker compose ps` และดูข้อความขัดข้องด้วย `docker compose logs --tail=60 api worker web`
+7. หยุดด้วย `docker compose down` ข้อมูลจะอยู่ใน volumes สำหรับ PostgreSQL และ Redis เปิดอีกครั้งด้วยตัวเปิดเดิม
 
 เมื่อรัน API และ worker โดยตรงบน Windows ใช้ OLLAMA_URL=http://127.0.0.1:11434 ทั้งสองบริการ หากรันใน Docker แล้วปุ่ม AI ยังไม่พร้อม ให้ตรวจว่า container เข้าถึง http://host.docker.internal:11434/api/tags ได้ แล้วรีเฟรชหน้าเว็บ แหล่งเรียน คำตอบ และแผนถูกประมวลผลโดย Ollama ในเครื่อง
 
