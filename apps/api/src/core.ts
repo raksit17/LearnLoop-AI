@@ -10,6 +10,7 @@ import {
 } from "@nestjs/common";
 import { PrismaClient } from "@prisma/client";
 import { createHash } from "node:crypto";
+import { localDemoEnabled } from "./local";
 import { ZodType, ZodTypeDef } from "zod";
 
 export function parse<T>(
@@ -51,6 +52,16 @@ export class MemberGuard implements CanActivate {
   constructor(private db: Database) {}
   async canActivate(ctx: ExecutionContext) {
     const req = ctx.switchToHttp().getRequest();
+    if (localDemoEnabled()) {
+      const demo = await this.db.user.upsert({
+        where: { identity: "demo:local" },
+        create: { identity: "demo:local", name: "ผู้เรียนทดลอง" },
+        update: {},
+        select: { id: true },
+      });
+      req.user = demo.id;
+      return true;
+    }
     const token = await this.db.token.findUnique({
       where: { digest: digest(cookie(req, "sid")) },
     });
