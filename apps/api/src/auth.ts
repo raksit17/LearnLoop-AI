@@ -17,6 +17,7 @@ import { promisify } from "node:util";
 import { Issuer, generators } from "openid-client";
 import { Database, cookie, digest, parse } from "./core";
 import { z } from "zod";
+import { localDemoEnabled } from "./local";
 const derive = promisify(scrypt);
 const login = z.object({
   email: z.string().trim().email().max(254).toLowerCase(),
@@ -106,6 +107,7 @@ export class AuthController {
     return {
       ok: true,
       oidc: !!process.env.OIDC_ISSUER,
+      demo: localDemoEnabled(),
       ai: await ollamaReady(),
     };
   }
