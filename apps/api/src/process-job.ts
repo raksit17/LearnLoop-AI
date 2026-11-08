@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { Payload } from "./ai/queue";
 import { ask, verifyQuestions, verifyFeedback, plan } from "./ai/provider";
 import { minutes } from "./engine";
+import { selectUniqueQuestions } from "./question-dedupe";
 
 export async function processJob(
   db: PrismaClient,
@@ -21,24 +22,39 @@ export async function processJob(
       await ask("generate", { topic: src.topic.title, excerpt }),
       excerpt,
     );
-    const items = batch.map((q, i) => {
-      const h = createHash("sha256")
-        .update(job.id + "-" + i)
-        .digest("hex");
-      const id =
-        h.slice(0, 8) +
-        "-" +
-        h.slice(8, 12) +
-        "-4" +
-        h.slice(13, 16) +
-        "-a" +
-        h.slice(17, 20) +
-        "-" +
-        h.slice(20, 32);
-      return { ...q, id, topicId: src.topicId, sourceId: src.id };
+    // Serialize AI generators for the same topic. Query AFTER acquiring the lock
+    // so two concurrent jobs cannot save the same normalized question.
+    return db.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${src.topicId}))`;
+      const existing = await tx.question.findMany({
+        where: { topicId: src.topicId },
+        select: { prompt: true },
+      });
+      const unique = selectUniqueQuestions(
+        existing.map((q) => q.prompt),
+        batch,
+      );
+      const items = unique.map((q, i) => {
+        const h = createHash("sha256")
+          .update(job.id + "-" + i)
+          .digest("hex");
+        const id =
+          h.slice(0, 8) +
+          "-" +
+          h.slice(8, 12) +
+          "-4" +
+          h.slice(13, 16) +
+          "-a" +
+          h.slice(17, 20) +
+          "-" +
+          h.slice(20, 32);
+        return { ...q, id, topicId: src.topicId, sourceId: src.id };
+      });
+      const inserted = items.length
+        ? await tx.question.createMany({ data: items, skipDuplicates: true })
+        : { count: 0 };
+      return { count: inserted.count, skipped: batch.length - inserted.count };
     });
-    await db.question.createMany({ data: items, skipDuplicates: true });
-    return { count: items.length };
   }
   if (job.name === "tutor") {
     const a = await db.attempt.findFirstOrThrow({
