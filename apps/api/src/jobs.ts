@@ -47,7 +47,7 @@ export class JobsController {
       body,
     );
     const userId = req.user;
-    if (task === "generate") {
+    if (["generate", "reading-aid", "mindmap"].includes(task)) {
       const s = await this.db.source.findFirst({
         where: { id: b.resourceId, topic: { goal: { userId } } },
       });
@@ -67,10 +67,12 @@ export class JobsController {
       )
         throw new NotFoundException();
     } else throw new NotFoundException();
-    const prior =
-      task === "tutor"
-        ? await this.queue.getJob("tutor-" + b.resourceId)
+    const stableJobId = task === "tutor"
+      ? "tutor-" + b.resourceId
+      : task === "reading-aid" || task === "mindmap"
+        ? task + "-" + b.resourceId + "-" + b.section
         : null;
+    const prior = stableJobId ? await this.queue.getJob(stableJobId) : null;
     if (prior && (await prior.getState()) === "failed") {
       await prior.retry();
       return { jobId: prior.id };
@@ -79,7 +81,7 @@ export class JobsController {
       task,
       { ...b, userId },
       {
-        jobId: task === "tutor" ? "tutor-" + b.resourceId : randomUUID(),
+        jobId: stableJobId || randomUUID(),
         removeOnComplete: { age: 86400 },
         removeOnFail: { age: 86400 },
       },
