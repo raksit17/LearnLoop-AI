@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Param,
   Body,
   Req,
   UseGuards,
@@ -30,6 +31,7 @@ const publicQuestion = {
   topicId: true,
   prompt: true,
   kind: true,
+  sourceId: true,
   dueAt: true,
   days: true,
 };
@@ -155,6 +157,30 @@ export class LearningController {
         "ไม่พบข้อความใน PDF กรุณาแปลงภาพเป็นข้อความก่อน",
       );
     return this.source(req, { topicId: b.topicId, title: b.title, body: text });
+  }
+  @Get("questions/:questionId/preview") async preview(
+    @Req() req: any,
+    @Param("questionId") questionId: string,
+  ) {
+    const question = await this.db.question.findFirst({
+      where: {
+        id: parse(id, questionId),
+        topic: { goal: { userId: req.user } },
+      },
+      select: {
+        key: true,
+        hint: true,
+        quote: true,
+        source: { select: { title: true } },
+      },
+    });
+    if (!question) throw new NotFoundException("ไม่พบคำถาม");
+    return {
+      key: question.key,
+      hint: question.hint,
+      quote: question.quote,
+      source: question.source?.title || null,
+    };
   }
   @Post("questions") async question(@Req() req: any, @Body() body: unknown) {
     const b = parse(
