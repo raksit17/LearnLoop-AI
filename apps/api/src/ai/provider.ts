@@ -26,6 +26,27 @@ export const feedback = z
 export const plan = z
   .object({ instructions: z.array(z.string().min(1).max(1200)).length(5) })
   .strict();
+export const readingAid = z.object({
+  title: z.string().trim().min(2).max(180),
+  summary: z.string().trim().min(10).max(1000),
+  sections: z.array(z.object({
+    heading: z.string().trim().min(2).max(180),
+    explanation: z.string().trim().min(10).max(1500),
+    bullets: z.array(z.string().trim().min(2).max(350)).min(1).max(6),
+  }).strict()).min(1).max(5),
+  keyPoints: z.array(z.string().trim().min(2).max(350)).min(2).max(8),
+  glossary: z.array(z.object({
+    term: z.string().trim().min(1).max(100),
+    meaning: z.string().trim().min(2).max(400),
+  }).strict()).max(8),
+}).strict();
+export const mindMap = z.object({
+  root: z.string().trim().min(2).max(160),
+  branches: z.array(z.object({
+    label: z.string().trim().min(2).max(120),
+    children: z.array(z.string().trim().min(2).max(180)).min(1).max(6),
+  }).strict()).min(2).max(7),
+}).strict();
 const str = { type: "string" };
 const obj = (properties: Record<string, unknown>) => ({
   type: "object",
@@ -35,7 +56,7 @@ const obj = (properties: Record<string, unknown>) => ({
 });
 const arr = (items: unknown, minItems: number, maxItems: number) => ({ type: "array", items, minItems, maxItems });
 const kinds = ["recall", "application", "explanation"] as const;
-export type Task = "generate" | "tutor" | "planner";
+export type Task = "generate" | "tutor" | "planner" | "reading-aid" | "mindmap";
 
 function evidenceList(text: string) {
   return (text.match(/[^\n.!?。！？]{1,390}[.!?。！？]?|[.!?。！？]+/gu) || [])
@@ -45,6 +66,19 @@ function evidenceList(text: string) {
 function outputSchema(task: Task, evidence: string[]) {
   const evidenceId = {type: "string", enum: evidence.map((_, i) => String(i + 1))};
   if (task === "planner") return obj({instructions: arr(str, 5, 5)});
+  if (task === "reading-aid") return obj({
+    title: str,
+    summary: str,
+    sections: arr(obj({
+      heading: str, explanation: str, bullets: arr(str, 1, 6)
+    }), 1, 5),
+    keyPoints: arr(str, 2, 8),
+    glossary: arr(obj({term: str, meaning: str}), 0, 8),
+  });
+  if (task === "mindmap") return obj({
+    root: str,
+    branches: arr(obj({label: str, children: arr(str, 1, 6)}), 2, 7),
+  });
   if (task === "tutor") return obj({
     scorePercent: {type:"string", enum:["0","25","50","75","100"]},
     claims: arr(obj({point: str, verdict: {type:"string",enum:["supported","incorrect","unverified"]}, evidenceId: {type:"string",enum:["none", ...evidenceId.enum]}}),1,4),
@@ -56,7 +90,9 @@ function outputSchema(task: Task, evidence: string[]) {
 const tasks = {
   generate: "Write one short Thai question for each field: recall, novel application, and Feynman explanation. For each give prompt, reference key, non-revealing hint and grading rubric. Select evidenceId from the numbered source excerpts that supports the key. Keep each field to a single short sentence.",
   tutor: "Evaluate the answer against the provided reference and rubric. Set scorePercent to 0, 25, 50, 75 or 100 according to rubric coverage, and 1 to 3 short Thai claims. Select evidenceId of the reference passage that supports or contradicts each claim. Mark claims without evidence unverified and use none. Give one actionable next step in Thai.",
-  planner: "Return 5 short Thai instructions in order for priming, learning, recall, mixed application, and explaining. Use the goal, domain, prior ratings, prerequisites and time. Never reveal answers."
+  planner: "Return 5 short Thai instructions in order for priming, learning, recall, mixed application, and explaining. Use the goal, domain, prior ratings, prerequisites and time. Never reveal answers.",
+  "reading-aid": "Turn the source excerpt into an easy-to-read Thai lesson. Use a precise short title, a concise summary, 1-5 labeled sections with simple explanations and bullet points, 2-8 keyPoints, and a glossary of terms actually mentioned (empty array if none). Make the text easy to understand, with concrete examples only if supported by the source. Never invent facts or claim the source says something it does not.",
+  mindmap: "Create a compact Thai concept map from only the supplied source excerpt. Respond with a short root topic and 2-7 branches; each branch must have 1-6 concise child concepts. Emphasize hierarchical relationships and never add unrelated information."
 };
 const endpoint = () => (process.env.OLLAMA_URL || "http://127.0.0.1:11434").replace(/\/+$/, "");
 const modelName = () => process.env.OLLAMA_MODEL || "qwen3.5:4b-q4_K_M";
@@ -71,7 +107,7 @@ export async function ollamaReady(): Promise<boolean> {
 }
 export async function ask(task: Task, context: unknown) {
   const input = z.record(z.unknown()).parse(context);
-  const text = task === "generate" ? input.excerpt : input.reference;
+  const text = ["generate", "reading-aid", "mindmap"].includes(task) ? input.excerpt : input.reference;
   const evidence = task === "planner" ? [] : evidenceList(z.string().min(1).parse(text));
   if (task !== "planner" && !evidence.length) throw Error("ไม่มีข้อความอ้างอิงสำหรับงานนี้");
   const numbered = evidence.map((text,i) => ({id:String(i + 1),text}));
@@ -103,6 +139,8 @@ export async function ask(task: Task, context: unknown) {
     if (!passage) throw Error("Ollama เลือกข้อความอ้างอิงที่ไม่มีในบทเรียน");
     return passage.text;
   }
+  if (task === "reading-aid") return readingAid.parse(result);
+  if (task === "mindmap") return mindMap.parse(result);
   if (task === "generate") return {questions: kinds.map(kind => {
     const {evidenceId,...q} = result[kind];
     return {...q,kind,quote:citation(evidenceId)};
