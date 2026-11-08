@@ -6,6 +6,7 @@ import { CoreModule } from "./core";
 import { AuthModule } from "./auth";
 import { LearningModule } from "./learning";
 import { AiModule } from "./jobs";
+import { matchesPublicOrigin } from "./local";
 @Module({ imports: [CoreModule, AuthModule, LearningModule, AiModule] })
 class AppModule {}
 async function main() {
@@ -16,7 +17,7 @@ async function main() {
     if (
       req.method === "POST" &&
       req.headers.origin &&
-      req.headers.origin !== (process.env.PUBLIC_URL || "http://localhost:4318")
+      !matchesPublicOrigin(req.headers.origin)
     )
       return res.status(403).json({ message: "แหล่งคำขอไม่ตรงกับ PUBLIC_URL" });
     next();
