@@ -134,7 +134,11 @@ function addQuestion() {
 async function generate() {
   const r = await job("generate", sourceId.value, { section: section.value });
   await refresh();
-  message.value = "AI เพิ่มคำถาม " + r.count + " ข้อในคิวฝึกแล้ว";
+  message.value =
+    (r.count > 0
+      ? `AI เพิ่มคำถามใหม่ ${r.count} ข้อในคิวฝึกแล้ว`
+      : "AI ไม่พบคำถามใหม่ในชุดนี้") +
+    (r.skipped > 0 ? ` (ข้ามคำถามซ้ำ ${r.skipped} ข้อ)` : "");
 }
 async function planner() {
   const t = topicId.value,
