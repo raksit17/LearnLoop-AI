@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Param,
+  Query,
   Body,
   Req,
   UseGuards,
@@ -157,6 +158,27 @@ export class LearningController {
         "ไม่พบข้อความใน PDF กรุณาแปลงภาพเป็นข้อความก่อน",
       );
     return this.source(req, { topicId: b.topicId, title: b.title, body: text });
+  }
+  @Get("sources/:sourceId/artifacts") async sourceArtifact(
+    @Req() req: any,
+    @Param("sourceId") sourceId: string,
+    @Query("section") sectionQuery: string | undefined,
+    @Query("kind") kindQuery: string | undefined,
+  ) {
+    const section = parse(z.coerce.number().int().nonnegative(), sectionQuery ?? "0");
+    const kind = parse(z.enum(["reading_aid", "mindmap"]), kindQuery);
+    const source = await this.db.source.findFirst({
+      where: { id: parse(id, sourceId), topic: { goal: { userId: req.user } } },
+      select: { id: true, chunks: true },
+    });
+    if (!source) throw new NotFoundException("ไม่พบแหล่งเรียน");
+    if (section >= source.chunks.length)
+      throw new BadRequestException("ไม่มีเนื้อหาส่วนนี้");
+    const artifact = await this.db.sourceArtifact.findUnique({
+      where: { sourceId_section_kind: { sourceId: source.id, section, kind } },
+      select: { payload: true, createdAt: true },
+    });
+    return { kind, section, payload: artifact?.payload ?? null, createdAt: artifact?.createdAt ?? null };
   }
   @Get("questions/:questionId/preview") async preview(
     @Req() req: any,
