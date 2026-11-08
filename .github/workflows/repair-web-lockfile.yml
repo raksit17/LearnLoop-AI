@@ -36,3 +36,7 @@ jobs:
       - name: Validate Nuxt production build
         working-directory: apps/web
         run: npm run build
+      - name: Verify Docker Compose image builds (web, API, worker)
+        run: |
+          cp .env.example .env
+          docker compose build
