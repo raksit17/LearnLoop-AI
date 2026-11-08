@@ -1,0 +1,100 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+model User {
+  id String @id @default(uuid())
+  identity String @unique
+  name String
+  password String?
+  tokens Token[]
+  goals Goal[]
+}
+model Token {
+  digest String @id
+  userId String
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  expires DateTime
+}
+model Goal {
+  id String @id @default(uuid())
+  userId String
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  title String
+  domain String
+  topics Topic[]
+  @@index([userId])
+}
+model Topic {
+  id String @id @default(uuid())
+  goalId String
+  goal Goal @relation(fields:[goalId],references:[id],onDelete:Cascade)
+  title String
+  notes String @default("")
+  sources Source[]
+  questions Question[]
+  sessions StudySession[]
+  outgoing Link[] @relation("src")
+  incoming Link[] @relation("dst")
+}
+model Link {
+  id String @id @default(uuid())
+  src String
+  dst String
+  kind String
+  source Topic @relation("src",fields:[src],references:[id],onDelete:Cascade)
+  target Topic @relation("dst",fields:[dst],references:[id],onDelete:Cascade)
+  @@unique([src,dst,kind])
+}
+model Source {
+  id String @id @default(uuid())
+  topicId String
+  topic Topic @relation(fields:[topicId],references:[id],onDelete:Cascade)
+  title String
+  chunks String[]
+  questions Question[]
+}
+model Question {
+  id String @id @default(uuid())
+  topicId String
+  topic Topic @relation(fields:[topicId],references:[id],onDelete:Cascade)
+  sourceId String?
+  source Source? @relation(fields:[sourceId],references:[id])
+  prompt String
+  key String
+  quote String @default("")
+  kind String
+  hint String @default("")
+  rubric String @default("")
+  attempts Attempt[]
+  dueAt DateTime @default(now())
+  days Int @default(0)
+  @@index([topicId,dueAt])
+}
+model Attempt {
+  id String @id @default(uuid())
+  questionId String
+  question Question @relation(fields:[questionId],references:[id])
+  answer String
+  confidence Int
+  hint Boolean
+  seconds Int
+  request String @unique
+  createdAt DateTime @default(now())
+  rating Int?
+  nextDue DateTime?
+  feedback Json?
+}
+model StudySession {
+  id String @id @default(uuid())
+  topicId String
+  topic Topic @relation(fields:[topicId],references:[id])
+  plan Json
+  step Int @default(0)
+  stepStart DateTime @default(now())
+  finished Boolean @default(false)
+}
+

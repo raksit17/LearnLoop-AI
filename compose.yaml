@@ -1,0 +1,60 @@
+name: learnloop-ai
+x-backend: &backend
+  image: learnloop-ai-api:local
+  build: ./apps/api
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql://learnloop:${POSTGRES_PASSWORD:-learnloop_local}@db:5432/learnloop
+    REDIS_HOST: redis
+    OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+    OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3.5:4b-q4_K_M}
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: learnloop
+      POSTGRES_DB: learnloop
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-learnloop_local}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U learnloop]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    command: [redis-server, --appendonly, 'yes']
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  api:
+    <<: *backend
+    command: [sh, -c, "npx --no-install prisma migrate deploy && node dist/main.js"]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://localhost:3001/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 4s
+      timeout: 4s
+      retries: 40
+  worker:
+    <<: *backend
+    command: [node, dist/worker.js]
+    depends_on:
+      api:
+        condition: service_healthy
+  web:
+    build: ./apps/web
+    ports: ['127.0.0.1:4318:3000']
+    depends_on:
+      api:
+        condition: service_healthy
+volumes:
+  pgdata:
+  redisdata:
