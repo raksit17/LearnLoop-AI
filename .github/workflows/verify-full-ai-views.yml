@@ -1,0 +1,147 @@
+name: Verify complete lesson AI views
+on:
+  push:
+    branches: [feat/full-lesson-reading-and-mindmaps]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build and test API
+        working-directory: apps/api
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+          npm test
+      - name: Build Nuxt
+        working-directory: apps/web
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Docker PostgreSQL eight-part summary and mindmap integration
+        run: |
+          cp .env.example .env
+          docker compose up -d --build --wait
+          docker compose exec -T api node <<'NODE'
+          const assert = require("node:assert/strict");
+          const { PrismaClient } = require("@prisma/client");
+          const provider = require("./dist/ai/provider");
+          const { processJob } = require("./dist/process-job");
+          const db = new PrismaClient();
+          const base = "http://web:3000/v1/";
+          let readingCalls = 0, mapCalls = 0;
+          provider.ask = async (task, input) => {
+            const index = Number(input.excerpt.match(/SECTION_(\d+)/)[1]);
+            assert(index>=1 && index<=8);
+            if (task === "reading-aid") {
+              readingCalls++;
+              return {
+                title: "บทเรียน "+index,
+                summary: "คำอธิบาย Present Simple ส่วนที่ "+index+" โดยละเอียด",
+                sections:[{heading:"หัวข้อ "+index,explanation:"อ่านง่ายสำหรับส่วนที่ "+index,bullets:["กฎ "+index]}],
+                keyPoints:["จำกฎ "+index,"ฝึกใช้ "+index],
+                glossary:[],
+              };
+            }
+            assert.equal(task,"mindmap");
+            mapCalls++;
+            return {
+              root: "ส่วนที่ "+index,
+              branches:[
+                {label:"แนวคิด",children:["แนวคิด "+index]},
+                {label:"ตัวอย่าง",children:["ตัวอย่าง "+index]},
+              ],
+            };
+          };
+          (async()=>{
+            const state=await fetch(base+"state").then(r=>r.json());
+            const u=state.user;
+            const g=await db.goal.create({data:{userId:u.id,title:"Full lesson modes test",domain:"English"}});
+            const t=await db.topic.create({data:{goalId:g.id,title:"Present Simple"}});
+            const s=await db.source.create({data:{
+              topicId:t.id,title:"Present Simple Tense",
+              chunks:Array.from({length:8},(_,i)=>"SECTION_"+(i+1)+" content"),
+            }});
+            const get = async(kind)=>{
+              const r=await fetch(base+"sources/"+s.id+"/artifacts?scope=all&kind="+kind);
+              assert.equal(r.status,200);
+              return r.json();
+            };
+            const run = (kind,section) => processJob(db,{
+              name:kind==="mindmap"?"mindmap":"reading-aid",
+              id:"test-"+kind+"-"+section,
+              data:{userId:u.id,resourceId:s.id,section,minutes:30},
+            });
+            let aid=await get("reading_aid"), maps=await get("mindmap");
+            assert.equal(aid.total,8); assert.equal(aid.items.length,0);
+            assert.equal(maps.total,8); assert.equal(maps.items.length,0);
+            for(let i=0;i<3;i++)assert.equal((await run("reading_aid",i)).cached,false);
+            for(let i=0;i<2;i++)assert.equal((await run("mindmap",i)).cached,false);
+            assert.equal((await get("reading_aid")).items.length,3);
+            assert.equal((await get("mindmap")).items.length,2);
+            for(let i=0;i<8;i++){
+              assert.equal((await run("reading_aid",i)).cached,i<3);
+              assert.equal((await run("mindmap",i)).cached,i<2);
+            }
+            aid=await get("reading_aid"); maps=await get("mindmap");
+            assert.deepEqual(aid.items.map(x=>x.section),[0,1,2,3,4,5,6,7]);
+            assert.deepEqual(maps.items.map(x=>x.section),[0,1,2,3,4,5,6,7]);
+            assert.equal(aid.items[7].payload.title,"บทเรียน 8");
+            assert.equal(maps.items[7].payload.root,"ส่วนที่ 8");
+            assert.equal(readingCalls,8);
+            assert.equal(mapCalls,8);
+            assert.equal(await db.sourceArtifact.count({where:{sourceId:s.id}}),16);
+            for(const kind of ["reading_aid","mindmap"]){
+              const r=await fetch(base+"sources/"+s.id+"/artifacts?section=7&kind="+kind);
+              assert.equal(r.status,200);
+              assert.equal((await r.json()).section,7);
+            }
+            const invalid=await fetch(base+"sources/"+s.id+"/artifacts?scope=invalid&kind=mindmap");
+            assert.equal(invalid.status,400);
+            console.log("Full lesson reading and mindmap: 8/8 each, two independent caches, resume and API passed");
+          })().catch(e=>{console.error(e);process.exitCode=1}).finally(()=>db.$disconnect());
+          NODE
+      - name: Verify owner access to both full-lesson artifact kinds
+        run: |
+          DEV_AUTH_BYPASS=false docker compose up -d --force-recreate api --wait
+          node <<'NODE'
+          const assert=require("node:assert/strict");
+          const base="http://127.0.0.1:4318/v1/";
+          const origin="http://localhost:4318";
+          async function request(path,body,cookie){
+            const r=await fetch(base+path,{
+              method:body===undefined?"GET":"POST",
+              headers:{...(body===undefined?{}:{"Content-Type":"application/json",Origin:origin}),...(cookie?{Cookie:cookie}:{})},
+              body:body===undefined?undefined:JSON.stringify(body)
+            });
+            return {status:r.status,data:await r.json(),cookie:r.headers.get("set-cookie")?.split(";")[0]};
+          }
+          (async()=>{
+            const suffix=Date.now();
+            const a=await request("register",{name:"A",email:"whole-reading-a-"+suffix+"@example.test",password:"testpass123"});
+            const b=await request("register",{name:"B",email:"whole-reading-b-"+suffix+"@example.test",password:"testpass123"});
+            assert.equal(a.status,201);assert.equal(b.status,201);
+            const g=await request("goals",{title:"Private",domain:"English"},a.cookie);
+            const t=await request("topics",{goalId:g.data.id,title:"Present Simple"},a.cookie);
+            const s=await request("sources",{topicId:t.data.id,title:"Source",body:"Example sentence for study"},a.cookie);
+            assert.equal(s.status,201);
+            for(const kind of ["reading_aid","mindmap"]){
+              const path="sources/"+s.data.id+"/artifacts?scope=all&kind="+kind;
+              assert.equal((await request(path)).status,401);
+              assert.equal((await request(path,undefined,b.cookie)).status,404);
+              const owner=await request(path,undefined,a.cookie);
+              assert.equal(owner.status,200);
+              assert.equal(owner.data.total,1);
+              assert.deepEqual(owner.data.items,[]);
+            }
+            console.log("Whole reading/mindmap ownership passed");
+          })().catch(e=>{console.error(e);process.exitCode=1});
+          NODE
+      - name: Docker logs on failure
+        if: failure()
+        run: docker compose logs --tail=110 || true
