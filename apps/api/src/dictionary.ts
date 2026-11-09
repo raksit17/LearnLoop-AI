@@ -16,7 +16,7 @@ const groupSchema = z.object({
 const wordSchema = z.object({
   word: z.string().trim().min(1).max(120),
   meaning: z.string().trim().min(1).max(500),
-  partOfSpeech: z.enum(["noun", "verb", "adjective", "adverb", "phrase", "other"]).default("other"),
+  partOfSpeech: z.enum(["noun", "verb", "phrasal_verb", "adjective", "adverb", "phrase", "other"]).default("other"),
   pronunciation: z.string().trim().max(120).default(""),
   example: z.string().trim().max(1200).default(""),
   exampleTranslation: z.string().trim().max(1200).default(""),
