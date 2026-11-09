@@ -4,11 +4,9 @@ const {
     topics,
     topicId,
     goalId,
-    active,
     api,
     refresh,
     job,
-    openQuestion,
     health,
     message,
   } = useLoop(),
@@ -30,8 +28,6 @@ const newTitle = ref(""),
   key = ref(""),
   hint = ref(""),
   kind = ref("recall"),
-  duration = ref(30),
-  instructions = ref<string[]>([]),
   noteKey = () => ["ll-note", data.value.user.id, topicId.value].join(":");
 const source = computed(() =>
   sources.value.find((s: any) => s.id === sourceId.value),
@@ -41,35 +37,12 @@ watch(
   () => {
     notes.value = localStorage.getItem(noteKey()) ?? topic.value?.notes ?? "";
     sourceId.value = sources.value[0]?.id || "";
-    instructions.value = [];
     sourceTitle.value = body.value = prompt.value = key.value = hint.value = "";
     upload.value = null;
   },
   { immediate: true },
 );
 watch(sourceId, () => (section.value = 0));
-watch(duration, () => (instructions.value = []));
-const now = ref(Date.now());
-let timer: any;
-onMounted(() => (timer = setInterval(() => (now.value = Date.now()), 1000)));
-onUnmounted(() => clearInterval(timer));
-const session = computed(() =>
-    active.value?.topicId === topicId.value ? active.value : null,
-  ),
-  step = computed(() => session.value?.plan[session.value.step]);
-const remaining = computed(() => {
-  if (!step.value) return "";
-  const secs = Math.max(
-    0,
-    Math.ceil(
-      (Date.parse(session.value.stepStart) +
-        step.value.minutes * 60000 -
-        now.value) /
-        1000,
-    ),
-  );
-  return Math.floor(secs / 60) + ":" + String(secs % 60).padStart(2, "0");
-});
 function localStorageSafe(e: Event) {
   localStorage.setItem(noteKey(), (e.target as HTMLTextAreaElement).value);
 }
@@ -140,21 +113,6 @@ async function generate() {
       : "AI ไม่พบคำถามใหม่ในชุดนี้") +
     (r.skipped > 0 ? ` (ข้ามคำถามซ้ำ ${r.skipped} ข้อ)` : "");
 }
-async function planner() {
-  const t = topicId.value,
-    m = duration.value;
-  const r = await job("planner", t, { minutes: m });
-  if (t === topicId.value && m === duration.value)
-    instructions.value = r.instructions;
-}
-async function start() {
-  await api("sessions/start", {
-    topicId: topicId.value,
-    minutes: duration.value,
-    instructions: instructions.value.length ? instructions.value : undefined,
-  });
-  await refresh();
-}
 </script>
 <template>
   <p class="eyebrow dark">LEARNING WORKSPACE</p>
@@ -169,27 +127,9 @@ async function start() {
         <option v-for="t in topics" :value="t.id">{{ t.title }}</option>
       </select></label
     >
-    <section v-if="session" class="hero">
-      <p class="eyebrow">STUDY SESSION · {{ session.step + 1 }} / 5</p>
-      <h2>{{ step.name }} · {{ remaining }}</h2>
-      <p>{{ step.instruction }}</p>
-      <button v-if="step.questionId" @click="openQuestion(step.questionId)">
-        เปิดโจทย์
-      </button>
-      <button
-        :disabled="busy"
-        @click="
-          run(async () => {
-            await api('sessions/next', { id: session.id, step: session.step });
-            await refresh();
-          })
-        "
-      >
-        {{ session.step === 4 ? "จบรอบเรียน" : "เสร็จขั้นตอนนี้" }}
-      </button>
-    </section>
+    <StudyPlanner />
     <div class="columns">
-      <section class="card">
+      <section id="lesson-sources" class="card">
         <h2>แหล่งเรียน</h2>
         <details>
           <summary>+ นำเข้าบทเรียน</summary>
@@ -261,24 +201,6 @@ async function start() {
       </section>
     </div>
     <QuestionBank />
-    <section class="card" v-if="!active">
-      <h2>วางแผนรอบเรียน</h2>
-      <label
-        >เวลาเรียน<select v-model="duration" :disabled="busy">
-          <option v-for="n in [20, 30, 45, 60]" :value="n">{{ n }} นาที</option>
-        </select></label
-      ><button
-        class="light"
-        :disabled="busy || !health.ai"
-        @click="run(planner)"
-      >
-        ให้ AI ออกแบบกิจกรรม
-      </button>
-      <button :disabled="busy" @click="run(start)">เริ่มรอบเรียน</button>
-      <ol v-if="instructions.length">
-        <li v-for="s in instructions">{{ s }}</li>
-      </ol>
-    </section>
     <p v-if="busy" role="status">กำลังประมวลผล…</p>
     <p v-if="!health.ai">
       เชื่อมต่อ Ollama หรือหาโมเดลไม่พบ เปิด Ollama ตรวจชื่อด้วย ollama list แล้วโหลดหน้านี้ใหม่
