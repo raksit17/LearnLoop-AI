@@ -17,7 +17,7 @@ export function useLoop() {
       body === undefined
         ? {}
         : {
-            method: "POST",
+            method,
             headers: isFile ? {} : { "Content-Type": "application/json" },
             body: isFile ? body : JSON.stringify(body),
           },
