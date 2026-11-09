@@ -348,14 +348,30 @@ export class LearningController {
     @Param("sourceId") sourceId: string,
     @Query("section") sectionQuery: string | undefined,
     @Query("kind") kindQuery: string | undefined,
+    @Query("scope") scopeQuery: string | undefined,
   ) {
-    const section = parse(z.coerce.number().int().nonnegative(), sectionQuery ?? "0");
     const kind = parse(z.enum(["reading_aid", "mindmap"]), kindQuery);
+    const scope = parse(z.enum(["section", "all"]).default("section"), scopeQuery);
     const source = await this.db.source.findFirst({
       where: { id: parse(id, sourceId), topic: { goal: { userId: req.user } } },
       select: { id: true, chunks: true },
     });
     if (!source) throw new NotFoundException("ไม่พบแหล่งเรียน");
+
+    // One authorized request retrieves all existing per-section summaries.
+    // Keep the original section API unchanged for ReadingAid and MindMap.
+    if (scope === "all") {
+      if (kind !== "reading_aid")
+        throw new BadRequestException("สรุปทั้งบทเรียนรองรับชนิด reading_aid เท่านั้น");
+      const cached = await this.db.sourceArtifact.findMany({
+        where: { sourceId: source.id, kind, section: { gte: 0, lt: source.chunks.length } },
+        orderBy: { section: "asc" },
+        select: { section: true, payload: true, createdAt: true },
+      });
+      return { kind, scope, total: source.chunks.length, items: cached };
+    }
+
+    const section = parse(z.coerce.number().int().nonnegative(), sectionQuery ?? "0");
     if (section >= source.chunks.length)
       throw new BadRequestException("ไม่มีเนื้อหาส่วนนี้");
     const artifact = await this.db.sourceArtifact.findUnique({

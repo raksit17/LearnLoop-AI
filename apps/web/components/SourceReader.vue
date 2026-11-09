@@ -10,6 +10,7 @@ const props = defineProps<{
 const { api, job } = useLoop();
 const view = ref<ReaderView>("original");
 const fullLesson = ref(false);
+const summaryScope = ref<"all" | "part">("all");
 const loadingCache = ref(true);
 const generating = ref<ArtifactKind | null>(null);
 const error = ref("");
@@ -127,6 +128,20 @@ async function createArtifact(kind: ArtifactKind) {
         </div>
       </template>
       <template v-else>
+        <div v-if="view === 'summary'" class="reader-summary-scope" role="group" aria-label="เลือกขอบเขตสรุป">
+          <button type="button" :class="{ selected: summaryScope === 'all' }"
+            :aria-pressed="summaryScope === 'all'"
+            @click="summaryScope = 'all'">ทั้งบทเรียน ({{ source.chunks.length }} ส่วน)</button>
+          <button type="button" :class="{ selected: summaryScope === 'part' }"
+            :aria-pressed="summaryScope === 'part'"
+            @click="summaryScope = 'part'">เฉพาะส่วนที่ {{ section + 1 }}</button>
+        </div>
+        <WholeLessonSummary
+          v-if="view === 'summary' && summaryScope === 'all'"
+          :source="source"
+          :ai-ready="aiReady"
+        />
+        <template v-else>
         <p v-if="loadingCache">กำลังตรวจผล AI ที่บันทึกไว้…</p>
         <template v-else-if="selectedKind && artifacts[selectedKind]">
           <ReadingAid
@@ -151,6 +166,7 @@ async function createArtifact(kind: ArtifactKind) {
           >{{ generating ? 'AI กำลังประมวลผล…' : 'สร้างด้วย AI' }}</button>
           <p v-if="!aiReady" class="reader-footnote">ยังไม่พบ Ollama หรือโมเดลที่กำหนด แต่ยังอ่านต้นฉบับได้</p>
         </div>
+        </template>
       </template>
       <p v-if="error" class="reader-error" role="alert">{{ error }}</p>
     </div>
