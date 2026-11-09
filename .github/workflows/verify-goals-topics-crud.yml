@@ -23,7 +23,7 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           npm run build
-      - name: Docker integration: CRUD, confirmation and cascading relations
+      - name: "Docker integration: CRUD, confirmation and cascading relations"
         run: |
           cp .env.example .env
           docker compose up -d --build --wait
