@@ -9,7 +9,6 @@ const preview = ref<any[]>([]);
 const aiTips = ref<string[]>([]);
 const previewLoading = ref(false);
 const previewError = ref("");
-const expanded = ref(false);
 const now = ref(Date.now());
 const draft = ref("");
 const savedNote = ref(false);
@@ -326,7 +325,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <details class="study-strategy-details" :open="expanded" @toggle="expanded = ($event.target as HTMLDetailsElement).open">
+    <details class="study-strategy-details">
       <summary>8 เทคนิคนี้อยู่ตรงไหนในการเรียนแต่ละรอบ?</summary>
       <div class="study-strategy-grid">
         <div v-for="(item, i) in strategies" :key="item.title">
