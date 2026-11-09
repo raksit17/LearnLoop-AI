@@ -8,4 +8,5 @@ export interface Payload {
   resourceId: string;
   section: number;
   minutes: number;
+  word?: string;
 }

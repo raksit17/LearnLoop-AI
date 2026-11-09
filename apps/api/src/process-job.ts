@@ -6,12 +6,18 @@ import { Payload } from "./ai/queue";
 import { ask, verifyQuestions, verifyFeedback, plan, readingAid, mindMap } from "./ai/provider";
 import { minutes } from "./engine";
 import { selectUniqueQuestions } from "./question-dedupe";
+import { dictionaryLookupWord, verifyDictionarySuggestion } from "./dictionary-ai";
 
 export async function processJob(
   db: PrismaClient,
   job: { name: string; id?: string; data: Payload },
 ) {
   const { userId, resourceId, section } = job.data;
+  if (job.name === "dictionary") {
+    const word = dictionaryLookupWord.parse(job.data.word);
+    // No database write until the learner checks and confirms the AI draft.
+    return verifyDictionarySuggestion(await ask("dictionary", { word }), word);
+  }
   if (job.name === "generate") {
     const src = await db.source.findFirstOrThrow({
       where: { id: resourceId, topic: { goal: { userId } } },

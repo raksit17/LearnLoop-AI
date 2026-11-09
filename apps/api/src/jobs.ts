@@ -18,6 +18,7 @@ import { z } from "zod";
 import { MemberGuard, Database, parse } from "./core";
 import { queueName, connection, Payload } from "./ai/queue";
 import { duration } from "./learning";
+import { dictionaryLookupWord } from "./dictionary-ai";
 @Controller("ai")
 @UseGuards(MemberGuard)
 export class JobsController {
@@ -38,6 +39,18 @@ export class JobsController {
       throw new ServiceUnavailableException(
         "เชื่อมต่อ Ollama หรือหาโมเดลที่เลือกไม่พบ ตรวจ OLLAMA_URL และ ollama list",
       );
+    if (task === "dictionary") {
+      const input = parse(z.object({ word: dictionaryLookupWord }).strict(), body);
+      const job = await this.queue.add("dictionary", {
+        userId: req.user, resourceId: randomUUID(), section: 0, minutes: 30,
+        word: input.word,
+      }, {
+        jobId: randomUUID(),
+        removeOnComplete: { age: 86400 },
+        removeOnFail: { age: 86400 },
+      });
+      return { jobId: job.id };
+    }
     const b = parse(
       z.object({
         resourceId: z.string().uuid(),
