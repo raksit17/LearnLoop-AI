@@ -57,8 +57,7 @@ const clozePrompt = computed(() => {
   const example = activeCard.value.word.example;
   const word = activeCard.value.word.word;
   if (!word || !example) return "";
-  const escaped = word.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\const otherSynonyms = computed(() => activeCard.value?.group.words.filter(
-  word => word.id !== activeCard.value?.word.id) || []);");
+  const escaped = word.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
   const re = new RegExp("(?<![\\p{L}])" + escaped + "(?![\\p{L}])", "iu");
   return re.test(example) ? example.replace(re, "_____") : "";
 });
