@@ -1,13 +1,19 @@
 import { z } from "zod";
 import { normalizeDictionaryKey } from "./dictionary-utils";
 
-export const dictionaryLookupWord = z.string().trim().min(1).max(60)
-  .regex(/^[a-zA-Z]+(?:[-'][a-zA-Z]+)*$/, "กรุณาพิมพ์คำศัพท์ภาษาอังกฤษหนึ่งคำ");
+// Accept words, phrasal verbs and short multi-word English expressions (up to 6 words).
+// Canonicalize whitespace for consistent lookup and duplicate detection.
+export const dictionaryLookupWord = z.string().trim().min(1).max(120)
+  .transform(value => value.replace(/[ \t]+/gu, " ").replace(/\u2019/gu, "'"))
+  .refine(
+    value => /^[a-zA-Z]+(?:[-'][a-zA-Z]+)*(?: [a-zA-Z]+(?:[-'][a-zA-Z]+)*){0,5}$/.test(value),
+    "กรุณาพิมพ์คำศัพท์หรือวลีภาษาอังกฤษไม่เกิน 6 คำ เช่น give up หรือ look after",
+  );
 
 export const dictionaryWordSuggestion = z.object({
   word: z.string().trim().min(1).max(120),
   meaning: z.string().trim().min(1).max(500),
-  partOfSpeech: z.enum(["noun", "verb", "adjective", "adverb", "phrase", "other"]),
+  partOfSpeech: z.enum(["noun", "verb", "phrasal_verb", "adjective", "adverb", "phrase", "other"]),
   pronunciation: z.string().trim().max(120),
   example: z.string().trim().max(1200),
   exampleTranslation: z.string().trim().max(1200),

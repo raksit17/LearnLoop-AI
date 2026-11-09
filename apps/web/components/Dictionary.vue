@@ -29,7 +29,7 @@ function emptyWord() {
 }
 const wordDraft = reactive(emptyWord());
 const partNames: Record<string, string> = {
-  noun: "คำนาม", verb: "คำกริยา", adjective: "คำคุณศัพท์",
+  noun: "คำนาม", verb: "คำกริยา", phrasal_verb: "กริยาวลี (Phrasal Verb)", adjective: "คำคุณศัพท์",
   adverb: "คำวิเศษณ์", phrase: "วลี", other: "อื่น ๆ",
 };
 const words = computed(() => groups.value.flatMap(group => group.words.map(word => ({ group, word }))));
@@ -310,14 +310,14 @@ function beginReview() {
         <div class="vocab-ai-heading">
           <div>
             <p class="eyebrow dark">AI DICTIONARY • POWERED BY OLLAMA</p>
-            <h2>พิมพ์ศัพท์คำเดียว ให้ AI ช่วยเติมทั้งหมด</h2>
-            <p class="vocab-muted">คำแปล • คำอ่าน IPA • Synonyms • ความต่างของการใช้ • ตัวอย่าง • แบบฝึก 3 รูปแบบ</p>
+            <h2>พิมพ์คำศัพท์หรือ Phrasal Verb ให้ AI ช่วยเติมทั้งหมด</h2>
+            <p class="vocab-muted">รองรับ give up, look after และวลีหลายคำ • คำแปล • IPA • Synonyms • ตัวอย่าง • แบบฝึกจำ</p>
           </div>
           <span class="vocab-pos">{{ health.ai ? "Ollama พร้อมใช้งาน" : "Ollama ยังไม่พร้อม" }}</span>
         </div>
         <form class="vocab-ai-form" @submit.prevent="run(generateAiVocabulary)">
-          <label for="vocab-ai-query">คำศัพท์ภาษาอังกฤษ
-            <input id="vocab-ai-query" v-model="aiTerm" placeholder="เช่น happy, improve, achieve" required maxlength="60" autocomplete="off" spellcheck="false" />
+          <label for="vocab-ai-query">คำศัพท์ / Phrasal Verb / วลีภาษาอังกฤษ
+            <input id="vocab-ai-query" v-model="aiTerm" placeholder="เช่น happy, give up, look after" required maxlength="120" autocomplete="off" spellcheck="false" />
           </label>
           <button :disabled="busy || !health.ai">{{ busy ? "กำลังทำงาน…" : "✨ สร้างด้วย AI" }}</button>
         </form>
