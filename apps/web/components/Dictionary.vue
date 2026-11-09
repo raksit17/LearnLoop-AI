@@ -7,11 +7,16 @@ type VocabWord = {
 type VocabGroup = {
   id: string; name: string; description: string; words: VocabWord[];
 };
-const { api, message } = useLoop();
+const { api, message, health } = useLoop();
 const { busy, run } = useAction();
 const groups = ref<VocabGroup[]>([]);
 const selectedId = ref("");
 const search = ref("");
+type AiWord = Omit<VocabWord, "id" | "groupId" | "dueAt" | "days">;
+type AiDraft = { groupName: string; groupDescription: string; words: AiWord[] };
+const aiTerm = ref("");
+const aiDraft = ref<AiDraft | null>(null);
+const practiceMode = ref<"meaning" | "cloze" | "contrast">("meaning");
 const mode = ref<"library" | "review">("library");
 const groupDraft = reactive({ name: "", description: "" });
 const editGroup = ref(false);
@@ -47,6 +52,24 @@ const selectedGroup = computed(() =>
 const activeCard = computed(() => due.value[0] || null);
 const otherSynonyms = computed(() => activeCard.value?.group.words.filter(
   word => word.id !== activeCard.value?.word.id) || []);
+const clozePrompt = computed(() => {
+  if (!activeCard.value) return "";
+  const example = activeCard.value.word.example;
+  const word = activeCard.value.word.word;
+  if (!word || !example) return "";
+  const escaped = word.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\const otherSynonyms = computed(() => activeCard.value?.group.words.filter(
+  word => word.id !== activeCard.value?.word.id) || []);");
+  const re = new RegExp("(?<![\\p{L}])" + escaped + "(?![\\p{L}])", "iu");
+  return re.test(example) ? example.replace(re, "_____") : "";
+});
+const canContrast = computed(() => Boolean(otherSynonyms.value.length && activeCard.value?.word.nuance.trim()));
+const exerciseOptions = computed(() => activeCard.value?.group.words.slice(0, 5) || []);
+function setPractice(next: "meaning" | "cloze" | "contrast") {
+  practiceMode.value = next;
+  guess.value = "";
+  revealed.value = false;
+}
+
 const guess = ref("");
 const revealed = ref(false);
 const reviewRequest = ref("");
@@ -160,6 +183,30 @@ async function grade(rating: number) {
   await load();
   message.value = "นัดทบทวนคำนี้อีกครั้ง " + new Date(result.dueAt).toLocaleString("th-TH");
 }
+async function generateAiVocabulary() {
+  aiDraft.value = null;
+  const job = await api("ai/dictionary", {word: aiTerm.value.trim()});
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const status = await api("ai/jobs/" + job.jobId);
+    if (status.state === "completed") {
+      aiDraft.value = status.result as AiDraft;
+      message.value = "AI สร้างคำแนะนำแล้ว ตรวจสอบคำแปลและบริบทก่อนบันทึก";
+      return;
+    }
+    if (status.state === "failed") throw Error(status.error || "AI สร้างข้อมูลไม่สำเร็จ กรุณาลองใหม่");
+    await new Promise(resolve => setTimeout(resolve, 1200));
+  }
+  throw Error("AI ยังประมวลผลอยู่ กรุณาลองสร้างใหม่ภายหลัง");
+}
+async function importAiVocabulary() {
+  if (!aiDraft.value) return;
+  const saved = await api("dictionary/ai/import", aiDraft.value);
+  await load();
+  search.value = "";
+  selectedId.value = saved.groupId;
+  aiDraft.value = null;
+  message.value = `บันทึก ${saved.inserted} คำ ข้ามคำซ้ำ ${saved.skipped} คำ พร้อมให้ฝึกจำแล้ว`;
+}
 function beginReview() {
   mode.value = "review";
   revealed.value = false;
@@ -196,11 +243,25 @@ function beginReview() {
           <span class="pill">{{ activeCard.group.name }}</span>
           <span class="vocab-muted">คงเหลือ {{ due.length }} คำ</span>
         </div>
-        <p class="eyebrow dark">RECALL THE ENGLISH WORD</p>
-        <h2>{{ activeCard.word.meaning }}</h2>
-        <p class="vocab-muted">{{ partNames[activeCard.word.partOfSpeech] }} · {{ activeCard.word.nuance || "นึกคำภาษาอังกฤษให้ได้ก่อนดูเฉลย" }}</p>
+        <div class="vocab-practice-switch" role="group" aria-label="เลือกรูปแบบการฝึก">
+          <button :class="{ selected: practiceMode === 'meaning' }" @click="setPractice('meaning')">แปลไทย → อังกฤษ</button>
+          <button :disabled="!clozePrompt" :class="{ selected: practiceMode === 'cloze' }" @click="setPractice('cloze')">เติมคำในประโยค</button>
+          <button :disabled="!canContrast" :class="{ selected: practiceMode === 'contrast' }" @click="setPractice('contrast')">เลือก Synonym</button>
+        </div>
+        <p class="eyebrow dark">{{ practiceMode === 'cloze' ? 'FILL IN THE BLANK' : practiceMode === 'contrast' ? 'CHOOSE THE RIGHT SYNONYM' : 'RECALL THE ENGLISH WORD' }}</p>
+        <h2 v-if="practiceMode === 'cloze' && clozePrompt" class="vocab-cloze">{{ clozePrompt }}</h2>
+        <h2 v-else-if="practiceMode === 'contrast' && canContrast">คำใดตรงกับความหมายและบริบทนี้มากที่สุด?</h2>
+        <h2 v-else>{{ activeCard.word.meaning }}</h2>
+        <p v-if="practiceMode === 'contrast' && canContrast" class="vocab-muted">{{ activeCard.word.nuance }}</p>
+        <p v-else class="vocab-muted">{{ partNames[activeCard.word.partOfSpeech] }} · {{ activeCard.word.meaning }}</p>
         <form v-if="!revealed" @submit.prevent="revealed = true">
-          <label for="vocab-answer">ลองพิมพ์คำศัพท์จากความจำ
+          <div v-if="practiceMode === 'contrast' && canContrast" class="vocab-choices">
+            <label v-for="choice in exerciseOptions" :key="choice.id" class="vocab-choice">
+              <input v-model="guess" type="radio" name="synonym" :value="choice.word" />
+              <span>{{ choice.word }}</span>
+            </label>
+          </div>
+          <label v-else for="vocab-answer">ลองพิมพ์คำศัพท์จากความจำ
             <input id="vocab-answer" v-model="guess" autocomplete="off" spellcheck="false" placeholder="Write the English word…" />
           </label>
           <div class="actions">
@@ -246,6 +307,65 @@ function beginReview() {
     </section>
 
     <template v-else>
+      <section class="card vocab-ai-panel">
+        <div class="vocab-ai-heading">
+          <div>
+            <p class="eyebrow dark">AI DICTIONARY • POWERED BY OLLAMA</p>
+            <h2>พิมพ์ศัพท์คำเดียว ให้ AI ช่วยเติมทั้งหมด</h2>
+            <p class="vocab-muted">คำแปล • คำอ่าน IPA • Synonyms • ความต่างของการใช้ • ตัวอย่าง • แบบฝึก 3 รูปแบบ</p>
+          </div>
+          <span class="vocab-pos">{{ health.ai ? "Ollama พร้อมใช้งาน" : "Ollama ยังไม่พร้อม" }}</span>
+        </div>
+        <form class="vocab-ai-form" @submit.prevent="run(generateAiVocabulary)">
+          <label for="vocab-ai-query">คำศัพท์ภาษาอังกฤษ
+            <input id="vocab-ai-query" v-model="aiTerm" placeholder="เช่น happy, improve, achieve" required maxlength="60" autocomplete="off" spellcheck="false" />
+          </label>
+          <button :disabled="busy || !health.ai">{{ busy ? "กำลังทำงาน…" : "✨ สร้างด้วย AI" }}</button>
+        </form>
+        <p v-if="!health.ai" class="vocab-muted">เริ่ม Ollama และตรวจว่าโมเดลที่ตั้งค่าไว้พร้อมใช้งาน แล้วรีเฟรชหน้าเว็บ</p>
+        <p v-if="busy" class="vocab-muted" role="status">โปรดตรวจดูผลเมื่อ AI ตอบกลับ การสร้างคำศัพท์อาจใช้เวลาตามความเร็วของ Ollama</p>
+        <div v-if="aiDraft" class="vocab-ai-preview">
+          <div class="vocab-section-heading">
+            <div>
+              <h3>ตรวจสอบผล AI ก่อนเพิ่มลงคลัง</h3>
+              <p class="vocab-muted">แก้ไขข้อมูลได้ทุกช่อง ป้องกัน Synonyms ผิดบริบท และคำศัพท์ซ้ำจะถูกข้ามโดยไม่เขียนทับของเดิม</p>
+            </div>
+            <button type="button" class="light" @click="aiDraft = null">ปิดตัวอย่าง</button>
+          </div>
+          <form @submit.prevent="run(importAiVocabulary)">
+            <div class="vocab-form-grid">
+              <label>ชื่อกลุ่มความหมาย (ภาษาไทย)
+                <input v-model="aiDraft.groupName" required maxlength="100" />
+              </label>
+              <label>คำอธิบายกลุ่ม
+                <input v-model="aiDraft.groupDescription" maxlength="1000" />
+              </label>
+            </div>
+            <p class="vocab-muted">{{ aiDraft.words.length }} คำที่ AI แนะนำ — เปิดแต่ละคำเพื่อตรวจสอบและแก้ไข</p>
+            <details v-for="(word, i) in aiDraft.words" :key="i" class="vocab-ai-word" :open="i === 0">
+              <summary>{{ i + 1 }}. {{ word.word }} — {{ word.meaning }}</summary>
+              <div class="vocab-form-grid">
+                <label>คำศัพท์<input v-model="word.word" required maxlength="120" /></label>
+                <label>คำแปล<input v-model="word.meaning" required maxlength="500" /></label>
+                <label>ชนิดคำ
+                  <select v-model="word.partOfSpeech">
+                    <option v-for="(label, key) in partNames" :key="key" :value="key">{{ label }}</option>
+                  </select>
+                </label>
+                <label>คำอ่าน IPA<input v-model="word.pronunciation" maxlength="120" /></label>
+              </div>
+              <label>ความต่างในการใช้<textarea v-model="word.nuance" maxlength="1200"></textarea></label>
+              <label>ตัวอย่างภาษาอังกฤษ<input v-model="word.example" maxlength="1200" /></label>
+              <label>คำแปลตัวอย่าง<input v-model="word.exampleTranslation" maxlength="1200" /></label>
+              <button type="button" class="vocab-danger-light" :disabled="aiDraft.words.length === 1" @click="aiDraft.words.splice(i, 1)">ไม่เพิ่มคำนี้</button>
+            </details>
+            <div class="actions">
+              <button :disabled="busy || !aiDraft.words.length">บันทึก {{ aiDraft.words.length }} คำเข้าคลังและสร้างคิวฝึกจำ</button>
+              <button type="button" class="light" @click="aiDraft = null">ยกเลิก</button>
+            </div>
+          </form>
+        </div>
+      </section>
       <section class="card vocab-create">
         <div>
           <h2>สร้างกลุ่ม Synonyms</h2>
