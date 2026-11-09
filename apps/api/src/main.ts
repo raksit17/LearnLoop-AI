@@ -15,7 +15,7 @@ async function main() {
   app.use((req: any, res: any, next: any) => {
     res.setHeader("Cache-Control", "no-store");
     if (
-      req.method === "POST" &&
+      ["POST", "PATCH", "PUT", "DELETE"].includes(req.method) &&
       req.headers.origin &&
       !matchesPublicOrigin(req.headers.origin)
     )
