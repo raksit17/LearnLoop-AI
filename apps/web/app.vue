@@ -14,17 +14,15 @@ const {
   { run, busy } = useAction();
 const ready = ref(false),
   signup = ref(false),
-  showGoal = ref(false),
   name = ref(""),
   email = ref(""),
-  password = ref(""),
-  title = ref(""),
-  domain = ref("General");
+  password = ref("");
 const tabs = [
   ["home", "ภาพรวม"],
   ["learn", "ห้องเรียน"],
   ["recall", "ฝึกจำ"],
   ["graph", "แผนผัง"],
+  ["manage", "จัดการข้อมูล"],
 ];
 onMounted(async () => {
   try {
@@ -45,16 +43,6 @@ function auth() {
     });
     password.value = "";
     await refresh();
-  });
-}
-function createGoal() {
-  run(async () => {
-    const g = await api("goals", { title: title.value, domain: domain.value });
-    goalId.value = g.id;
-    title.value = "";
-    showGoal.value = false;
-    await refresh();
-    page.value = "learn";
   });
 }
 function changeGoal() {
@@ -126,38 +114,21 @@ async function logout() {
     <main>
       <header>
         <span>สมุดเรียนรู้ส่วนตัว</span>
-        <div>
-          <select aria-label="เป้าหมาย" v-model="goalId" @change="changeGoal">
-            <option v-for="g in data.goals" :value="g.id">{{ g.title }}</option>
+        <div class="header-controls">
+          <select v-if="data.goals.length" aria-label="เป้าหมาย" v-model="goalId" @change="changeGoal">
+            <option v-for="g in data.goals" :key="g.id" :value="g.id">{{ g.title }}</option>
           </select>
-          <button class="light" @click="showGoal = !showGoal">
-            + เป้าหมาย
-          </button>
+          <span v-else>ยังไม่มีเป้าหมายการเรียน</span>
+          <button class="light" @click="page = 'manage'">จัดการเป้าหมายและหัวข้อ</button>
         </div>
       </header>
-      <form
-        v-if="showGoal || !goalId"
-        class="card"
-        @submit.prevent="createGoal"
-      >
-        <h2>ตั้งเป้าหมายการเรียน</h2>
-        <label
-          >อยากทำอะไรได้เมื่อเรียนจบ<input required v-model="title" /></label
-        ><label
-          >ประเภท<select v-model="domain">
-            <option>Programming</option>
-            <option>English</option>
-            <option value="General">วิชาอื่น ๆ</option>
-          </select></label
-        ><button :disabled="busy">สร้างเป้าหมาย</button>
-      </form>
-      <template v-if="goalId"
-        ><Dashboard v-if="page === 'home'" /><Workspace
-          v-else-if="page === 'learn'"
-          :key="goalId" /><Recall
-          v-else-if="page === 'recall'"
-          :key="goalId" /><KnowledgeGraph v-else :key="goalId"
-      /></template>
+      <LearningManager v-if="page === 'manage' || !goalId" />
+      <template v-else>
+        <Dashboard v-if="page === 'home'" />
+        <Workspace v-else-if="page === 'learn'" :key="goalId" />
+        <Recall v-else-if="page === 'recall'" :key="goalId" />
+        <KnowledgeGraph v-else-if="page === 'graph'" :key="goalId" />
+      </template>
     </main>
   </div>
 </template>

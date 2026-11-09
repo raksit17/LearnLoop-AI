@@ -6,14 +6,18 @@ export function useLoop() {
     qId = useState("question", () => ""),
     message = useState("notice", () => "");
   const health = useState("health", () => ({ ai: false, oidc: false, demo: false }));
-  async function api(path: string, body?: any) {
+  async function api(
+    path: string,
+    body?: any,
+    method: "POST" | "PATCH" | "DELETE" = "POST",
+  ) {
     const isFile = body instanceof FormData;
     const r = await fetch(
       "/v1/" + path,
       body === undefined
         ? {}
         : {
-            method: "POST",
+            method,
             headers: isFile ? {} : { "Content-Type": "application/json" },
             body: isFile ? body : JSON.stringify(body),
           },

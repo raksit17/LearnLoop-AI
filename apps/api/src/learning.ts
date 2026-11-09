@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
+  Delete,
   Param,
   Query,
   Body,
@@ -101,6 +103,113 @@ export class LearningController {
     );
     return this.db.goal.create({ data: { ...b, userId: req.user } });
   }
+  // All edits are restricted to the signed-in user's own data.
+  @Patch("goals/:goalId") async updateGoal(
+    @Req() req: any,
+    @Param("goalId") goalId: string,
+    @Body() body: unknown,
+  ) {
+    const idToEdit = parse(id, goalId);
+    const b = parse(
+      z.object({
+        title,
+        domain: z.enum(["Programming", "English", "General"]),
+      }).strict(),
+      body,
+    );
+    const result = await this.db.goal.updateMany({
+      where: { id: idToEdit, userId: req.user },
+      data: b,
+    });
+    if (!result.count) throw new NotFoundException("ไม่พบเป้าหมาย");
+    return this.db.goal.findFirstOrThrow({
+      where: { id: idToEdit, userId: req.user },
+    });
+  }
+
+  @Patch("topics/:topicId") async updateTopic(
+    @Req() req: any,
+    @Param("topicId") topicId: string,
+    @Body() body: unknown,
+  ) {
+    const idToEdit = parse(id, topicId);
+    const b = parse(z.object({ title }).strict(), body);
+    const updated = await this.db.topic.updateMany({
+      where: { id: idToEdit, goal: { userId: req.user } },
+      data: b,
+    });
+    if (!updated.count) throw new NotFoundException("ไม่พบหัวข้อ");
+    return this.db.topic.findFirstOrThrow({
+      where: { id: idToEdit, goal: { userId: req.user } },
+    });
+  }
+
+  @Delete("goals/:goalId") async deleteGoal(
+    @Req() req: any,
+    @Param("goalId") goalId: string,
+    @Body() body: unknown,
+  ) {
+    const idToDelete = parse(id, goalId);
+    const b = parse(
+      z.object({ confirmTitle: title }).strict(),
+      body,
+    );
+    return this.db.$transaction(async (tx) => {
+      const goal = await tx.goal.findFirst({
+        where: { id: idToDelete, userId: req.user },
+        select: { id: true, title: true, topics: { select: { id: true } } },
+      });
+      if (!goal) throw new NotFoundException("ไม่พบเป้าหมาย");
+      if (goal.title !== b.confirmTitle)
+        throw new ConflictException("ชื่อเป้าหมายที่ยืนยันไม่ตรงกัน");
+      const ids = goal.topics.map(t => t.id);
+      await this.deleteTopicChildren(tx, ids);
+      await tx.topic.deleteMany({ where: { id: { in: ids }, goalId: goal.id } });
+      await tx.goal.delete({ where: { id: goal.id } });
+      return { ok: true, deleted: "goal", id: goal.id };
+    });
+  }
+
+  @Delete("topics/:topicId") async deleteTopic(
+    @Req() req: any,
+    @Param("topicId") topicId: string,
+    @Body() body: unknown,
+  ) {
+    const idToDelete = parse(id, topicId);
+    const b = parse(
+      z.object({ confirmTitle: title }).strict(),
+      body,
+    );
+    return this.db.$transaction(async (tx) => {
+      const topic = await tx.topic.findFirst({
+        where: { id: idToDelete, goal: { userId: req.user } },
+        select: { id: true, title: true },
+      });
+      if (!topic) throw new NotFoundException("ไม่พบหัวข้อ");
+      if (topic.title !== b.confirmTitle)
+        throw new ConflictException("ชื่อหัวข้อที่ยืนยันไม่ตรงกัน");
+      await this.deleteTopicChildren(tx, [topic.id]);
+      await tx.topic.delete({ where: { id: topic.id } });
+      return { ok: true, deleted: "topic", id: topic.id };
+    });
+  }
+
+  /**
+   * Attempts and study sessions have RESTRICT foreign keys; clean these
+   * before removing questions and topics. The transaction rolls back
+   * everything if any dependent record cannot be removed.
+   */
+  private async deleteTopicChildren(tx: any, topicIds: string[]) {
+    if (!topicIds.length) return;
+    await tx.attempt.deleteMany({ where: { question: { topicId: { in: topicIds } } } });
+    await tx.studySession.deleteMany({ where: { topicId: { in: topicIds } } });
+    await tx.question.deleteMany({ where: { topicId: { in: topicIds } } });
+    await tx.source.deleteMany({ where: { topicId: { in: topicIds } } });
+    await tx.link.deleteMany({
+      where: { OR: [{ src: { in: topicIds } }, { dst: { in: topicIds } }] },
+    });
+  }
+
   @Post("topics") async topic(@Req() req: any, @Body() body: unknown) {
     const b = parse(z.object({ goalId: id, title }), body);
     if (
