@@ -105,6 +105,7 @@ model StudySession {
   topicId String
   topic Topic @relation(fields:[topicId],references:[id])
   plan Json
+  evidence Json @default("[]")
   step Int @default(0)
   stepStart DateTime @default(now())
   finished Boolean @default(false)
