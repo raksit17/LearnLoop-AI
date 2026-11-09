@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { dictionarySuggestion } from "../dictionary-ai";
 export const question = z
   .object({
     prompt: z.string().min(4).max(2000),
@@ -56,7 +57,7 @@ const obj = (properties: Record<string, unknown>) => ({
 });
 const arr = (items: unknown, minItems: number, maxItems: number) => ({ type: "array", items, minItems, maxItems });
 const kinds = ["recall", "application", "explanation"] as const;
-export type Task = "generate" | "tutor" | "planner" | "reading-aid" | "mindmap";
+export type Task = "generate" | "tutor" | "planner" | "reading-aid" | "mindmap" | "dictionary";
 
 function evidenceList(text: string) {
   return (text.match(/[^\n.!?。！？]{1,390}[.!?。！？]?|[.!?。！？]+/gu) || [])
@@ -65,6 +66,15 @@ function evidenceList(text: string) {
 
 function outputSchema(task: Task, evidence: string[]) {
   const evidenceId = {type: "string", enum: evidence.map((_, i) => String(i + 1))};
+  if (task === "dictionary") return obj({
+    groupName: str,
+    groupDescription: str,
+    words: arr(obj({
+      word: str, meaning: str,
+      partOfSpeech: {type:"string", enum:["noun","verb","adjective","adverb","phrase","other"]},
+      pronunciation: str, example: str, exampleTranslation: str, nuance: str
+    }), 1, 5),
+  });
   if (task === "planner") return obj({instructions: arr(str, 5, 5)});
   if (task === "reading-aid") return obj({
     title: str,
@@ -88,6 +98,7 @@ function outputSchema(task: Task, evidence: string[]) {
   return obj({recall:item, application:item, explanation:item});
 }
 const tasks = {
+  dictionary: "Act as a careful English-to-Thai vocabulary tutor. Given a SINGLE English word, choose ONE common meaning/sense and return groupName as a concise THAI semantic theme and groupDescription as a Thai explanation. Return up to five words INCLUDING the queried spelling, with only genuinely close synonyms in the same sense and part of speech (never inflections or unrelated senses). If true synonyms are unavailable return only the queried word. Each word requires specific Thai meaning, valid partOfSpeech, confident IPA without slashes (empty string if unsure), natural short English example sentence containing the exact headword, Thai translation and Thai nuance distinguishing intensity, register and non-interchangeable contexts. Do not include the headword in its nuance. Avoid unsupported certainty and invented lexicographic facts.",
   generate: "Write one short Thai question for each field: recall, novel application, and Feynman explanation. For each give prompt, reference key, non-revealing hint and grading rubric. Select evidenceId from the numbered source excerpts that supports the key. Keep each field to a single short sentence.",
   tutor: "Evaluate the answer against the provided reference and rubric. Set scorePercent to 0, 25, 50, 75 or 100 according to rubric coverage, and 1 to 3 short Thai claims. Select evidenceId of the reference passage that supports or contradicts each claim. Mark claims without evidence unverified and use none. Give one actionable next step in Thai.",
   planner: "Return exactly five short Thai coaching tips in order: 1 mental priming and prior knowledge; 2 elaboration/why and dual coding sketch; 3 active retrieval without notes; 4 interleaving and appropriately challenging application; 5 Feynman explanation, feedback, and a quiet rest break. Tailor to the specific topic, goals, prerequisites and prior ratings. Do not reveal answers; do not promise results. The app already supplies the mandatory activities and time allocations; your tips should enhance rather than replace them.",
@@ -108,11 +119,12 @@ export async function ollamaReady(): Promise<boolean> {
 export async function ask(task: Task, context: unknown) {
   const input = z.record(z.unknown()).parse(context);
   const text = ["generate", "reading-aid", "mindmap"].includes(task) ? input.excerpt : input.reference;
-  const evidence = task === "planner" ? [] : evidenceList(z.string().min(1).parse(text));
-  if (task !== "planner" && !evidence.length) throw Error("ไม่มีข้อความอ้างอิงสำหรับงานนี้");
+  const noEvidence = task === "planner" || task === "dictionary";
+  const evidence = noEvidence ? [] : evidenceList(z.string().min(1).parse(text));
+  if (!noEvidence && !evidence.length) throw Error("ไม่มีข้อความอ้างอิงสำหรับงานนี้");
   const numbered = evidence.map((text,i) => ({id:String(i + 1),text}));
   const {reference, excerpt, ...fields} = input;
-  const payload = task === "planner" ? input : {...fields, evidence: numbered};
+  const payload = noEvidence ? input : {...fields, evidence: numbered};
   const response = await fetch(endpoint() + "/api/chat", {
     method: "POST",
     signal: AbortSignal.timeout(240000),
@@ -139,6 +151,7 @@ export async function ask(task: Task, context: unknown) {
     if (!passage) throw Error("Ollama เลือกข้อความอ้างอิงที่ไม่มีในบทเรียน");
     return passage.text;
   }
+  if (task === "dictionary") return dictionarySuggestion.parse(result);
   if (task === "reading-aid") return readingAid.parse(result);
   if (task === "mindmap") return mindMap.parse(result);
   if (task === "generate") return {questions: kinds.map(kind => {
