@@ -10,7 +10,7 @@ const props = defineProps<{
 const { api, job } = useLoop();
 const view = ref<ReaderView>("original");
 const fullLesson = ref(false);
-const summaryScope = ref<"all" | "part">("all");
+const aiScope = ref<"all" | "part">("all");
 const loadingCache = ref(true);
 const generating = ref<ArtifactKind | null>(null);
 const error = ref("");
@@ -128,16 +128,18 @@ async function createArtifact(kind: ArtifactKind) {
         </div>
       </template>
       <template v-else>
-        <div v-if="view === 'summary'" class="reader-summary-scope" role="group" aria-label="เลือกขอบเขตสรุป">
-          <button type="button" :class="{ selected: summaryScope === 'all' }"
-            :aria-pressed="summaryScope === 'all'"
-            @click="summaryScope = 'all'">ทั้งบทเรียน ({{ source.chunks.length }} ส่วน)</button>
-          <button type="button" :class="{ selected: summaryScope === 'part' }"
-            :aria-pressed="summaryScope === 'part'"
-            @click="summaryScope = 'part'">เฉพาะส่วนที่ {{ section + 1 }}</button>
+        <div class="reader-summary-scope" role="group" aria-label="เลือกขอบเขตเนื้อหา AI">
+          <button type="button" :class="{ selected: aiScope === 'all' }"
+            :aria-pressed="aiScope === 'all'"
+            @click="aiScope = 'all'">ทั้งบทเรียน ({{ source.chunks.length }} ส่วน)</button>
+          <button type="button" :class="{ selected: aiScope === 'part' }"
+            :aria-pressed="aiScope === 'part'"
+            @click="aiScope = 'part'">เฉพาะส่วนที่ {{ section + 1 }}</button>
         </div>
-        <WholeLessonSummary
-          v-if="view === 'summary' && summaryScope === 'all'"
+        <WholeLessonArtifacts
+          v-if="aiScope === 'all'"
+          :key="source.id + ':' + view"
+          :mode="view === 'reading' ? 'reading' : view === 'mindmap' ? 'mindmap' : 'summary'"
           :source="source"
           :ai-ready="aiReady"
         />
