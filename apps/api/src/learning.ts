@@ -358,11 +358,9 @@ export class LearningController {
     });
     if (!source) throw new NotFoundException("ไม่พบแหล่งเรียน");
 
-    // One authorized request retrieves all existing per-section summaries.
-    // Keep the original section API unchanged for ReadingAid and MindMap.
+    // Return cached per-section artifacts of either kind in source order.
+    // The caller must own the source; the original single-part API remains intact.
     if (scope === "all") {
-      if (kind !== "reading_aid")
-        throw new BadRequestException("สรุปทั้งบทเรียนรองรับชนิด reading_aid เท่านั้น");
       const cached = await this.db.sourceArtifact.findMany({
         where: { sourceId: source.id, kind, section: { gte: 0, lt: source.chunks.length } },
         orderBy: { section: "asc" },
