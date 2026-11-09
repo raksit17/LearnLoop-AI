@@ -1,0 +1,94 @@
+name: Verify study sessions and 8 learning strategies
+on:
+  push:
+    branches: [feat/evidence-based-study-sessions]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: API compile and unit tests
+        working-directory: apps/api
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+          npm test
+      - name: Nuxt production build
+        working-directory: apps/web
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Docker Compose migrate and integrated study-session smoke test
+        run: |
+          cp .env.example .env
+          docker compose up -d --build --wait
+          docker compose exec -T api node <<'NODE'
+          const assert = require("node:assert/strict");
+          const { PrismaClient } = require("@prisma/client");
+          const db = new PrismaClient();
+          const base = "http://web:3000/v1/";
+          async function request(path, body) {
+            const response = await fetch(base + path, {
+              method: body === undefined ? "GET" : "POST",
+              headers: body === undefined ? {} : {
+                Origin: "http://localhost:4318",
+                "Content-Type": "application/json"
+              },
+              body: body === undefined ? undefined : JSON.stringify(body),
+            });
+            return { status: response.status, body: await response.json() };
+          }
+          (async () => {
+            const state = await request("state");
+            assert.equal(state.status, 200);
+            const userId = state.body.user.id;
+            const g = await db.goal.create({data:{userId,title:"StudyPlan Test",domain:"General"}});
+            const t = await db.topic.create({data:{goalId:g.id,title:"Authentication"}});
+            const other = await db.topic.create({data:{goalId:g.id,title:"SQL Index"}});
+            const baseDue = new Date("2025-01-01T00:00:00Z");
+            const question = await db.question.create({data:{topicId:t.id,prompt:"JWT คืออะไร?",key:"A signed token",kind:"recall",dueAt:baseDue}});
+            const mixed = await db.question.create({data:{topicId:other.id,prompt:"เลือก Index แบบไหน?",key:"Depends",kind:"application",dueAt:baseDue}});
+            const preview = await request("sessions/preview",{topicId:t.id,minutes:45});
+            assert.equal(preview.status,201,JSON.stringify(preview.body));
+            assert.equal(preview.body.plan.length,5);
+            assert.equal(preview.body.plan.reduce((s,p)=>s+p.minutes,0),45);
+            assert.equal(preview.body.plan[2].questionId,question.id);
+            assert.equal(preview.body.plan[3].questionId,mixed.id);
+            const started = await request("sessions/start",{topicId:t.id,minutes:45});
+            assert.equal(started.status,201,JSON.stringify(started.body));
+            const sid = started.body.id;
+            assert.equal(started.body.evidence.length,0);
+            const blocked = await request("sessions/start",{topicId:other.id,minutes:20});
+            assert.equal(blocked.status,409);
+            const premature = await request("sessions/reflection",{id:sid,step:4,text:"not yet"});
+            assert.equal(premature.status,409);
+            const note = await request("sessions/reflection",{id:sid,step:0,text:"ฉันจำ JWT และ Session ได้"});
+            assert.equal(note.status,201,JSON.stringify(note.body));
+            let updated = await request("state");
+            const session = updated.body.sessions.find(x=>x.id===sid);
+            assert.equal(session.evidence[0],"ฉันจำ JWT และ Session ได้");
+            for (let step = 0; step < 5; step++) {
+              if (step > 0) {
+                const save=await request("sessions/reflection",{id:sid,step,text:"สรุปขั้น "+step});
+                assert.equal(save.status,201,JSON.stringify(save.body));
+              }
+              const next=await request("sessions/next",{id:sid,step});
+              assert.equal(next.status,201,JSON.stringify(next.body));
+            }
+            updated=await request("state");
+            const finished=updated.body.sessions.find(x=>x.id===sid);
+            assert.equal(finished.finished,true);
+            assert.equal(finished.evidence.length,5);
+            const invalid=await request("sessions/preview",{topicId:t.id,minutes:13});
+            assert.equal(invalid.status,400);
+            console.log("Study-session preview, review question selection, reflections, progress and completion passed");
+          })().catch(e=>{console.error(e);process.exitCode=1}).finally(()=>db.$disconnect());
+          NODE
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs --tail=100 || true
