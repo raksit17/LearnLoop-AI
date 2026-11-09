@@ -102,8 +102,9 @@ async function createGoal() {
     title: goalTitle.value.trim(), domain: goalDomain.value,
   });
   goalTitle.value = "";
-  await refresh();
   goalId.value = g.id;
+  qId.value = "";
+  await refresh();
   message.value = "สร้างเป้าหมายใหม่เรียบร้อย";
 }
 async function createTopic() {
