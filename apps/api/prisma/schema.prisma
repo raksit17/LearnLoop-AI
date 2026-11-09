@@ -12,12 +12,23 @@ model User {
   password String?
   tokens Token[]
   goals Goal[]
+  goalCategories GoalCategory[]
 }
 model Token {
   digest String @id
   userId String
   user User @relation(fields:[userId],references:[id],onDelete:Cascade)
   expires DateTime
+}
+model GoalCategory {
+  id String @id @default(uuid())
+  userId String
+  user User @relation(fields:[userId], references:[id], onDelete:Cascade)
+  name String
+  key String
+  createdAt DateTime @default(now())
+  @@unique([userId,key])
+  @@index([userId])
 }
 model Goal {
   id String @id @default(uuid())

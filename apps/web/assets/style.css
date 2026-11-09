@@ -1137,7 +1137,7 @@ ol {
 }
 
 
-/* Goal and Topic CRUD workspace */
+/* Goal, Topic and Category CRUD workspace */
 .header-controls {
   display: flex;
   align-items: center;
@@ -1407,4 +1407,45 @@ ol {
   .manage-edit-form .manage-row-actions { grid-column: auto; }
   .header-controls { width: 100%; }
   .header-controls select { width: 100%; max-width: none; }
+}
+
+/* Manage custom goal categories */
+.manage-category-create {
+  grid-template-columns: minmax(220px, 1fr) auto;
+}
+.manage-helper {
+  color: #5e7264;
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 8px 0 14px;
+}
+.manage-built-in {
+  color: #5a715c;
+  font-size: 13px;
+}
+.manage-category-create button {
+  min-height: 43px;
+}
+@media (max-width: 670px) {
+  .manage-tabs {
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+  .manage-tabs button {
+    flex: 1 1 30%;
+  }
+  .manage-category-create {
+    grid-template-columns: 1fr;
+  }
+}
+
+.manage-create .manage-inline-link {
+  display: inline-flex;
+  align-items: center;
+  background: transparent;
+  color: #286044;
+  text-decoration: underline;
+  font-size: 13px;
+  padding: 8px 0 0;
+  margin-top: 4px;
 }

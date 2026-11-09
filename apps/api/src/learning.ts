@@ -21,9 +21,11 @@ import { z } from "zod";
 import { Database, MemberGuard, parse } from "./core";
 import { chunks, hasCycle, nextReview } from "./engine";
 import { buildStudyPlan } from "./study-plan";
+import { DEFAULT_GOAL_CATEGORIES, normalizeCategoryName, categoryKey, isDefaultCategory } from "./goal-categories";
 const id = z.string().uuid(),
   title = z.string().trim().min(1).max(500),
-  short = z.string().trim().min(1).max(12000);
+  short = z.string().trim().min(1).max(12000),
+  categoryName = z.string().trim().min(1).max(80).transform(normalizeCategoryName);
 export const duration = z.union([
   z.literal(20),
   z.literal(30),
@@ -46,13 +48,14 @@ export class LearningController {
   @Get("state") async state(@Req() req: any) {
     const userId = req.user,
       topic = { goal: { userId } };
-    const [user, goals, topics, sources, questions, attempts, links, sessions] =
+    const [user, goals, categories, topics, sources, questions, attempts, links, sessions] =
       await Promise.all([
         this.db.user.findUnique({
           where: { id: userId },
           select: { id: true, name: true },
         }),
         this.db.goal.findMany({ where: { userId }, orderBy: { title: "asc" } }),
+        this.db.goalCategory.findMany({ where: { userId }, orderBy: { name: "asc" }, select: { id: true, name: true, createdAt: true } }),
         this.db.topic.findMany({ where: topic, orderBy: { title: "asc" } }),
         this.db.source.findMany({
           where: { topic },
@@ -85,6 +88,10 @@ export class LearningController {
     return {
       user,
       goals,
+      categories: [
+        ...DEFAULT_GOAL_CATEGORIES.map((name) => ({ id: null, name, builtIn: true })),
+        ...categories.map((category) => ({ ...category, builtIn: false })),
+      ],
       topics,
       sources,
       questions,
@@ -93,37 +100,104 @@ export class LearningController {
       sessions,
     };
   }
-  @Post("goals") goal(@Req() req: any, @Body() body: unknown) {
-    const b = parse(
-      z.object({
-        title,
-        domain: z.enum(["Programming", "English", "General"]),
-      }),
-      body,
-    );
-    return this.db.goal.create({ data: { ...b, userId: req.user } });
+  /**
+   * Category operations and goal writes share a per-user lock. Renaming a
+   * category updates its existing goals atomically, without changing goal IDs.
+   */
+  private async lockGoalCategories(tx: any, userId: string) {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"goal-category:" + userId}))`;
   }
+
+  private async resolveGoalCategory(tx: any, userId: string, requested: string, previous?: string) {
+    const key = categoryKey(requested);
+    const builtIn = DEFAULT_GOAL_CATEGORIES.find((name) => categoryKey(name) === key);
+    if (builtIn) return builtIn;
+    const custom = await tx.goalCategory.findFirst({ where: { userId, key }, select: { name: true } });
+    if (custom) return custom.name;
+    // Do not invalidate a pre-existing category value during a title-only edit.
+    if (previous && categoryKey(previous) === key) return previous;
+    throw new BadRequestException("ประเภทนี้ยังไม่มีในระบบ กรุณาเพิ่มประเภทก่อน");
+  }
+
+  @Post("goal-categories") async createCategory(@Req() req: any, @Body() body: unknown) {
+    const b = parse(z.object({ name: categoryName }).strict(), body);
+    const key = categoryKey(b.name);
+    if (isDefaultCategory(b.name)) throw new ConflictException("มีประเภทนี้อยู่แล้ว");
+    return this.db.$transaction(async (tx) => {
+      await this.lockGoalCategories(tx, req.user);
+      if (await tx.goalCategory.findFirst({ where: { userId: req.user, key } }))
+        throw new ConflictException("มีประเภทนี้อยู่แล้ว");
+      return tx.goalCategory.create({
+        data: { userId: req.user, name: b.name, key },
+        select: { id: true, name: true, createdAt: true },
+      });
+    });
+  }
+
+  @Patch("goal-categories/:categoryId") async renameCategory(
+    @Req() req: any, @Param("categoryId") categoryId: string, @Body() body: unknown,
+  ) {
+    const cid = parse(id, categoryId);
+    const b = parse(z.object({ name: categoryName }).strict(), body);
+    const key = categoryKey(b.name);
+    if (isDefaultCategory(b.name)) throw new ConflictException("มีประเภทนี้อยู่แล้ว");
+    return this.db.$transaction(async (tx) => {
+      await this.lockGoalCategories(tx, req.user);
+      const current = await tx.goalCategory.findFirst({ where: { id: cid, userId: req.user } });
+      if (!current) throw new NotFoundException("ไม่พบประเภท");
+      const duplicate = await tx.goalCategory.findFirst({ where: { userId: req.user, key } });
+      if (duplicate && duplicate.id !== cid) throw new ConflictException("มีประเภทนี้อยู่แล้ว");
+      await tx.goal.updateMany({
+        where: { userId: req.user, domain: current.name },
+        data: { domain: b.name },
+      });
+      return tx.goalCategory.update({
+        where: { id: current.id },
+        data: { name: b.name, key },
+        select: { id: true, name: true, createdAt: true },
+      });
+    });
+  }
+
+  @Delete("goal-categories/:categoryId") async deleteCategory(
+    @Req() req: any, @Param("categoryId") categoryId: string, @Body() body: unknown,
+  ) {
+    const cid = parse(id, categoryId);
+    const b = parse(z.object({ confirmName: categoryName }).strict(), body);
+    return this.db.$transaction(async (tx) => {
+      await this.lockGoalCategories(tx, req.user);
+      const category = await tx.goalCategory.findFirst({ where: { id: cid, userId: req.user } });
+      if (!category) throw new NotFoundException("ไม่พบประเภท");
+      if (category.name !== b.confirmName)
+        throw new ConflictException("ชื่อประเภทที่ยืนยันไม่ตรงกัน");
+      if (await tx.goal.count({ where: { userId: req.user, domain: category.name } }))
+        throw new ConflictException("ยังมีเป้าหมายใช้ประเภทนี้ กรุณาย้ายเป้าหมายไปประเภทอื่นก่อน");
+      await tx.goalCategory.delete({ where: { id: category.id } });
+      return { ok: true, deleted: "category", id: category.id };
+    });
+  }
+
+  @Post("goals") async goal(@Req() req: any, @Body() body: unknown) {
+    const b = parse(z.object({ title, domain: categoryName }).strict(), body);
+    return this.db.$transaction(async (tx) => {
+      await this.lockGoalCategories(tx, req.user);
+      const domain = await this.resolveGoalCategory(tx, req.user, b.domain);
+      return tx.goal.create({ data: { title: b.title, domain, userId: req.user } });
+    });
+  }
+
   // All edits are restricted to the signed-in user's own data.
   @Patch("goals/:goalId") async updateGoal(
-    @Req() req: any,
-    @Param("goalId") goalId: string,
-    @Body() body: unknown,
+    @Req() req: any, @Param("goalId") goalId: string, @Body() body: unknown,
   ) {
     const idToEdit = parse(id, goalId);
-    const b = parse(
-      z.object({
-        title,
-        domain: z.enum(["Programming", "English", "General"]),
-      }).strict(),
-      body,
-    );
-    const result = await this.db.goal.updateMany({
-      where: { id: idToEdit, userId: req.user },
-      data: b,
-    });
-    if (!result.count) throw new NotFoundException("ไม่พบเป้าหมาย");
-    return this.db.goal.findFirstOrThrow({
-      where: { id: idToEdit, userId: req.user },
+    const b = parse(z.object({ title, domain: categoryName }).strict(), body);
+    return this.db.$transaction(async (tx) => {
+      await this.lockGoalCategories(tx, req.user);
+      const goal = await tx.goal.findFirst({ where: { id: idToEdit, userId: req.user } });
+      if (!goal) throw new NotFoundException("ไม่พบเป้าหมาย");
+      const domain = await this.resolveGoalCategory(tx, req.user, b.domain, goal.domain);
+      return tx.goal.update({ where: { id: goal.id }, data: { title: b.title, domain } });
     });
   }
 
