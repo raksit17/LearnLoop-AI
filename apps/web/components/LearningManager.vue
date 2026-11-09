@@ -1,5 +1,5 @@
 <script setup lang="ts">
-type ItemKind = "goal" | "topic";
+type ItemKind = "goal" | "topic" | "category";
 type EditItem = { kind: ItemKind; id: string; title: string; domain: string } | null;
 type DeleteItem = { kind: ItemKind; id: string; title: string } | null;
 
@@ -16,11 +16,22 @@ const goalTitle = ref("");
 const goalDomain = ref("General");
 const topicTitle = ref("");
 const topicGoal = ref("");
+const newCategoryName = ref("");
 const edit = ref<EditItem>(null);
 const removal = ref<DeleteItem>(null);
 const confirmation = ref("");
 
 const goals = computed<any[]>(() => data.value?.goals || []);
+const categories = computed<any[]>(() => data.value?.categories || []);
+const categoryOptions = computed<any[]>(() => {
+  const current = [...categories.value];
+  for (const goal of goals.value) {
+    if (!current.some(c => c.name === goal.domain))
+      current.push({ id: null, name: goal.domain, builtIn: true });
+  }
+  return current;
+});
+const categoryUsage = (name: string) => goals.value.filter(g => g.domain === name).length;
 const allTopics = computed<any[]>(() => data.value?.topics || []);
 const allSources = computed<any[]>(() => data.value?.sources || []);
 const allQuestions = computed<any[]>(() => data.value?.questions || []);
@@ -51,7 +62,9 @@ const deletionImpact = computed(() =>
   removal.value
     ? removal.value.kind === "goal"
       ? goalImpact(removal.value.id)
-      : topicImpact(removal.value.id)
+      : removal.value.kind === "topic"
+        ? topicImpact(removal.value.id)
+        : impact([])
     : null
 );
 const normalizedSearch = computed(() => search.value.trim().toLocaleLowerCase());
@@ -73,6 +86,12 @@ const visibleTopics = computed(() =>
     (t.title + " " + goalName(t.goalId)).toLocaleLowerCase().includes(normalizedSearch.value)
   )),
 );
+const visibleCategories = computed(() =>
+  [...categories.value]
+    .filter(category => category.name.toLocaleLowerCase().includes(normalizedSearch.value))
+    .sort((a,b) => sort.value === "reverse"
+      ? b.name.localeCompare(a.name,"th") : a.name.localeCompare(b.name,"th"))
+);
 
 function selectTab(kind: ItemKind) {
   tab.value = kind;
@@ -84,18 +103,25 @@ function selectTab(kind: ItemKind) {
 }
 function beginEdit(kind: ItemKind, item: any) {
   edit.value = {
-    kind, id: item.id, title: item.title, domain: item.domain || "General",
+    kind, id: item.id, title: item.title || item.name, domain: item.domain || "General",
   };
   removal.value = null;
 }
 function beginDelete(kind: ItemKind, item: any) {
   edit.value = null;
   confirmation.value = "";
-  removal.value = { kind, id: item.id, title: item.title };
+  removal.value = { kind, id: item.id, title: item.title || item.name };
 }
 function cancelDelete() {
   removal.value = null;
   confirmation.value = "";
+}
+async function createCategory() {
+  const created = await api("goal-categories", { name: newCategoryName.value.trim() });
+  newCategoryName.value = "";
+  await refresh();
+  goalDomain.value = created.name;
+  message.value = "เพิ่มประเภท “" + created.name + "” แล้ว สามารถเลือกใช้กับเป้าหมายได้";
 }
 async function createGoal() {
   const g = await api("goals", {
@@ -123,8 +149,11 @@ async function saveEdit() {
     await api("goals/" + row.id, {
       title: row.title.trim(), domain: row.domain,
     }, "PATCH");
-  } else {
+  } else if (row.kind === "topic") {
     await api("topics/" + row.id, { title: row.title.trim() }, "PATCH");
+  } else {
+    const saved = await api("goal-categories/" + row.id, { name: row.title.trim() }, "PATCH");
+    if (goalDomain.value === edit.value?.title) goalDomain.value = saved.name;
   }
   edit.value = null;
   await refresh();
@@ -133,6 +162,14 @@ async function saveEdit() {
 async function confirmDelete() {
   if (!removal.value || confirmation.value !== removal.value.title) return;
   const target = { ...removal.value };
+  if (target.kind === "category") {
+    await api("goal-categories/" + target.id, { confirmName: confirmation.value }, "DELETE");
+    if (goalDomain.value === target.title) goalDomain.value = "General";
+    cancelDelete();
+    await refresh();
+    message.value = `ลบประเภท “${target.title}” แล้ว`;
+    return;
+  }
   const impactedTopicIds = target.kind === "goal"
     ? allTopics.value.filter(t => t.goalId === target.id).map(t => t.id)
     : [target.id];
@@ -173,7 +210,7 @@ watch(() => goals.value.map(g => g.id).join(","), () => {
   <section class="manage-page">
     <p class="eyebrow dark">LEARNING DATA MANAGEMENT</p>
     <h1>จัดการข้อมูลการเรียน</h1>
-    <p class="manage-intro">จัดการเป้าหมายและหัวข้อได้ในที่เดียว ทั้งสร้างใหม่ แก้ไขชื่อ ค้นหา และลบข้อมูลที่ไม่ต้องการ</p>
+    <p class="manage-intro">จัดการเป้าหมาย หัวข้อ และประเภทการเรียนได้ในที่เดียว เพิ่มประเภทของตัวเองได้โดยไม่จำกัดแค่ Programming / English / ทั่วไป</p>
 
     <div class="manage-stats">
       <div><span>เป้าหมาย</span><strong>{{ goals.length }}</strong></div>
@@ -197,6 +234,10 @@ watch(() => goals.value.map(g => g.id).join(","), () => {
             :class="{ selected: tab === 'topic' }" @click="selectTab('topic')">
             หัวข้อ ({{ allTopics.length }})
           </button>
+          <button type="button" role="tab" :aria-selected="tab === 'category'"
+            :class="{ selected: tab === 'category' }" @click="selectTab('category')">
+            ประเภท ({{ categories.length }})
+          </button>
         </div>
       </div>
 
@@ -208,15 +249,14 @@ watch(() => goals.value.map(g => g.id).join(","), () => {
           </label>
           <label>ประเภท
             <select v-model="goalDomain">
-              <option value="General">ทั่วไป</option>
-              <option value="Programming">Programming</option>
-              <option value="English">English</option>
+<option v-for="category in categoryOptions" :key="category.id || category.name"
+                :value="category.name">{{ category.name === "General" ? "ทั่วไป" : category.name }}</option>
             </select>
           </label>
           <button type="submit" :disabled="busy">สร้างเป้าหมาย</button>
         </div>
       </form>
-      <form v-else class="manage-create" @submit.prevent="run(createTopic)">
+      <form v-else-if="tab === 'topic'" class="manage-create" @submit.prevent="run(createTopic)">
         <h3>+ เพิ่มหัวข้อการเรียน</h3>
         <div class="manage-create-fields">
           <label>ชื่อหัวข้อ
@@ -229,6 +269,17 @@ watch(() => goals.value.map(g => g.id).join(","), () => {
             </select>
           </label>
           <button type="submit" :disabled="busy || !goals.length">เพิ่มหัวข้อ</button>
+        </div>
+      </form>
+
+      <form v-else class="manage-create" @submit.prevent="run(createCategory)">
+        <h3>+ เพิ่มประเภทเป้าหมายใหม่</h3>
+        <p class="manage-helper">เช่น Backend, AI, ภาษาญี่ปุ่น หรือวิชาที่ต้องการเรียน ประเภทที่เพิ่มจะปรากฏในช่องเลือกประเภทของเป้าหมายทันที</p>
+        <div class="manage-create-fields manage-category-create">
+          <label>ชื่อประเภท
+            <input v-model="newCategoryName" required maxlength="80" placeholder="เช่น Backend Development" />
+          </label>
+          <button type="submit" :disabled="busy">เพิ่มประเภท</button>
         </div>
       </form>
 
@@ -251,7 +302,7 @@ watch(() => goals.value.map(g => g.id).join(","), () => {
       </div>
 
       <p class="manage-results" aria-live="polite">
-        พบ {{ tab === "goal" ? visibleGoals.length : visibleTopics.length }} รายการ
+        พบ {{ tab === "goal" ? visibleGoals.length : tab === "topic" ? visibleTopics.length : visibleCategories.length }} รายการ
       </p>
       <div class="manage-table-scroll">
         <table class="manage-table">
@@ -264,12 +315,20 @@ watch(() => goals.value.map(g => g.id).join(","), () => {
               <th scope="col">จัดการ</th>
             </tr>
           </thead>
-          <thead v-else>
+          <thead v-else-if="tab === 'topic'">
             <tr>
               <th scope="col">ชื่อหัวข้อ</th>
               <th scope="col">เป้าหมาย</th>
               <th scope="col">แหล่งเรียน</th>
               <th scope="col">คำถาม / รอบเรียน</th>
+              <th scope="col">จัดการ</th>
+            </tr>
+          </thead>
+          <thead v-else>
+            <tr>
+              <th scope="col">ชื่อประเภท</th>
+              <th scope="col">รูปแบบ</th>
+              <th scope="col">เป้าหมายที่ใช้งาน</th>
               <th scope="col">จัดการ</th>
             </tr>
           </thead>
@@ -295,9 +354,8 @@ watch(() => goals.value.map(g => g.id).join(","), () => {
                     </label>
                     <label>ประเภท
                       <select v-model="edit.domain">
-                        <option value="General">ทั่วไป</option>
-                        <option value="Programming">Programming</option>
-                        <option value="English">English</option>
+                      <option v-for="category in categoryOptions" :key="category.id || category.name"
+                                      :value="category.name">{{ category.name === "General" ? "ทั่วไป" : category.name }}</option>
                       </select>
                     </label>
                     <div class="manage-row-actions">
@@ -309,7 +367,7 @@ watch(() => goals.value.map(g => g.id).join(","), () => {
               </tr>
             </template>
           </tbody>
-          <tbody v-else>
+          <tbody v-else-if="tab === 'topic'">
             <template v-for="t in visibleTopics" :key="t.id">
               <tr :class="{ 'manage-current': topicId === t.id }">
                 <td><strong>{{ t.title }}</strong><small v-if="topicId === t.id">กำลังเลือก</small></td>
@@ -338,16 +396,51 @@ watch(() => goals.value.map(g => g.id).join(","), () => {
               </tr>
             </template>
           </tbody>
+          <tbody v-else>
+            <template v-for="category in visibleCategories" :key="category.id || category.name">
+              <tr>
+                <td><strong>{{ category.name }}</strong></td>
+                <td>{{ category.builtIn ? "ประเภทพื้นฐาน" : "ประเภทที่เพิ่มเอง" }}</td>
+                <td>{{ categoryUsage(category.name) }} เป้าหมาย</td>
+                <td>
+                  <div v-if="!category.builtIn" class="manage-row-actions">
+                    <button type="button" class="light" @click="beginEdit('category', category)">แก้ไขชื่อ</button>
+                    <button type="button" class="manage-danger-text"
+                      :disabled="!!categoryUsage(category.name)"
+                      :title="categoryUsage(category.name) ? 'ย้ายเป้าหมายไปประเภทอื่นก่อนลบ' : 'ลบประเภทที่ไม่ได้ใช้งาน'"
+                      @click="beginDelete('category', category)">ลบ</button>
+                  </div>
+                  <span v-else class="manage-built-in">เก็บไว้ใช้เสมอ</span>
+                </td>
+              </tr>
+              <tr v-if="edit?.kind === 'category' && edit.id === category.id" class="manage-editor-row">
+                <td colspan="4">
+                  <form class="manage-edit-form" @submit.prevent="run(saveEdit)">
+                    <h3>เปลี่ยนชื่อประเภท</h3>
+                    <label>ชื่อใหม่
+                      <input v-model="edit.title" required maxlength="80" />
+                    </label>
+                    <div class="manage-row-actions">
+                      <button type="submit" :disabled="busy">บันทึกชื่อ</button>
+                      <button type="button" class="light" @click="edit = null">ยกเลิก</button>
+                    </div>
+                    <p class="manage-helper">เมื่อเปลี่ยนชื่อ เป้าหมายที่ใช้ประเภทนี้จะเปลี่ยนตามอัตโนมัติ</p>
+                  </form>
+                </td>
+              </tr>
+            </template>
+          </tbody>
         </table>
       </div>
-      <p v-if="!(tab === 'goal' ? visibleGoals.length : visibleTopics.length)" class="manage-empty">
+      <p v-if="!(tab === 'goal' ? visibleGoals.length : tab === 'topic' ? visibleTopics.length : visibleCategories.length)" class="manage-empty">
         {{ search ? "ไม่พบรายการตามคำค้นหา" : "ยังไม่มีรายการประเภทนี้" }}
       </p>
 
       <section v-if="removal && deletionImpact" class="manage-delete-confirm" role="region" aria-label="ยืนยันการลบข้อมูล">
-        <h3>ยืนยันการลบ {{ removal.kind === "goal" ? "เป้าหมาย" : "หัวข้อ" }} “{{ removal.title }}”</h3>
-        <p>การลบนี้<strong>ไม่สามารถกู้คืนจากหน้าเว็บได้</strong> และจะลบข้อมูลที่เกี่ยวข้องต่อไปนี้ด้วย:</p>
-        <div class="manage-impact">
+        <h3>ยืนยันการลบ {{ removal.kind === "goal" ? "เป้าหมาย" : removal.kind === "topic" ? "หัวข้อ" : "ประเภท" }} “{{ removal.title }}”</h3>
+        <p v-if="removal.kind === 'category'">ลบเฉพาะชื่อประเภทที่ไม่ได้ใช้งาน โดยจะไม่ลบเป้าหมายหรือบทเรียน</p>
+        <p v-else>การลบนี้<strong>ไม่สามารถกู้คืนจากหน้าเว็บได้</strong> และจะลบข้อมูลที่เกี่ยวข้องต่อไปนี้ด้วย:</p>
+        <div v-if="removal.kind !== 'category'" class="manage-impact">
           <span>หัวข้อ {{ removal.kind === "goal" ? deletionImpact.topics : 1 }}</span>
           <span>บทเรียน {{ deletionImpact.sources }}</span>
           <span>คำถาม {{ deletionImpact.questions }}</span>
