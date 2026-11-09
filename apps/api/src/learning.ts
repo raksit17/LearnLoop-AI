@@ -17,7 +17,8 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import { z } from "zod";
 import { Database, MemberGuard, parse } from "./core";
-import { chunks, hasCycle, minutes, nextReview, phases } from "./engine";
+import { chunks, hasCycle, nextReview } from "./engine";
+import { buildStudyPlan } from "./study-plan";
 const id = z.string().uuid(),
   title = z.string().trim().min(1).max(500),
   short = z.string().trim().min(1).max(12000);
@@ -337,6 +338,29 @@ export class LearningController {
       return result;
     });
   }
+  private async makeStudyPlan(
+    userId: string,
+    topicId: string,
+    minutes: number,
+    aiTips: string[] = [],
+  ) {
+    const topic = await this.db.ownedTopic(userId, topicId);
+    const questions = await this.db.question.findMany({
+      where: { topic: { goalId: topic.goalId } },
+      orderBy: { dueAt: "asc" },
+      select: publicQuestion,
+    });
+    return buildStudyPlan(topic.id, topic.title, minutes, questions, aiTips);
+  }
+
+  @Post("sessions/preview") async previewSession(
+    @Req() req: any,
+    @Body() body: unknown,
+  ) {
+    const b = parse(z.object({ topicId: id, minutes: duration }), body);
+    return { plan: await this.makeStudyPlan(req.user, b.topicId, b.minutes) };
+  }
+
   @Post("sessions/start") async start(@Req() req: any, @Body() body: unknown) {
     const b = parse(
       z.object({
@@ -346,32 +370,9 @@ export class LearningController {
       }),
       body,
     );
-    const t = await this.db.ownedTopic(req.user, b.topicId);
-    const goals = await this.db.question.findMany({
-      where: { topic: { goalId: t.goalId } },
-      orderBy: { dueAt: "asc" },
-      select: publicQuestion,
-    });
-    const recall = goals.find((q) => q.topicId === t.id),
-      mixed =
-        goals.find((q) => q.topicId !== t.id && q.kind === "application") ||
-        goals.find((q) => q.topicId !== t.id) ||
-        goals.find((q) => q.kind === "application");
-    const times = minutes(b.minutes),
-      instructions = b.instructions || [
-        "เขียนสิ่งที่จำได้ก่อนเปิดบทเรียน",
-        "อ่านเนื้อหาแล้วเชื่อมกับความรู้เดิม",
-        "ตอบคำถามโดยปิดแหล่งเรียน",
-        "ลองใช้แนวคิดนี้กับสถานการณ์ใหม่",
-        "อธิบายให้ผู้เริ่มต้นเข้าใจในสามประโยค",
-      ];
-    const plan = phases.map((name, i) => ({
-      name,
-      minutes: times[i],
-      instruction: instructions[i],
-      questionId:
-        i === 2 ? recall?.id || null : i === 3 ? mixed?.id || null : null,
-    }));
+    const plan = await this.makeStudyPlan(
+      req.user, b.topicId, b.minutes, b.instructions,
+    );
     return this.db.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${req.user}::text))`;
       if (
@@ -382,9 +383,45 @@ export class LearningController {
         throw new ConflictException(
           "มีรอบเรียนค้างอยู่ กรุณาเรียนต่อจากภาพรวม",
         );
-      return tx.studySession.create({ data: { topicId: t.id, plan } });
+      return tx.studySession.create({
+        data: { topicId: b.topicId, plan, evidence: [] },
+      });
     });
   }
+
+  @Post("sessions/reflection") async reflection(
+    @Req() req: any,
+    @Body() body: unknown,
+  ) {
+    const b = parse(
+      z.object({
+        id,
+        step: z.number().int().min(0).max(4),
+        text: z.string().max(4000),
+      }),
+      body,
+    );
+    return this.db.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${b.id}::text))`;
+      const session = await tx.studySession.findFirst({
+        where: { id: b.id, topic: { goal: { userId: req.user } } },
+        select: { step: true, evidence: true },
+      });
+      if (!session) throw new NotFoundException("ไม่พบรอบเรียน");
+      if (b.step > session.step) {
+        throw new ConflictException("ยังไม่ถึงกิจกรรมที่เลือก");
+      }
+      const evidence = Array.isArray(session.evidence)
+        ? [...session.evidence] : [];
+      evidence[b.step] = b.text;
+      await tx.studySession.update({
+        where: { id: b.id },
+        data: { evidence },
+      });
+      return { ok: true };
+    });
+  }
+
   @Post("sessions/next") async advance(@Req() req: any, @Body() body: unknown) {
     const b = parse(
       z.object({ id, step: z.number().int().min(0).max(4) }),
