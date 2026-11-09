@@ -152,8 +152,9 @@ async function saveEdit() {
   } else if (row.kind === "topic") {
     await api("topics/" + row.id, { title: row.title.trim() }, "PATCH");
   } else {
+    const previousName = categories.value.find(category => category.id === row.id)?.name;
     const saved = await api("goal-categories/" + row.id, { name: row.title.trim() }, "PATCH");
-    if (goalDomain.value === edit.value?.title) goalDomain.value = saved.name;
+    if (goalDomain.value === previousName) goalDomain.value = saved.name;
   }
   edit.value = null;
   await refresh();
