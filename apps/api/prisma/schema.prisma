@@ -13,6 +13,7 @@ model User {
   tokens Token[]
   goals Goal[]
   goalCategories GoalCategory[]
+  vocabularyGroups VocabularyGroup[]
 }
 model Token {
   digest String @id
@@ -122,3 +123,48 @@ model StudySession {
   finished Boolean @default(false)
 }
 
+
+model VocabularyGroup {
+  id String @id @default(uuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name String
+  nameKey String
+  description String @default("")
+  words VocabularyWord[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([userId, nameKey])
+  @@index([userId])
+}
+model VocabularyWord {
+  id String @id @default(uuid())
+  groupId String
+  group VocabularyGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  word String
+  wordKey String
+  meaning String
+  partOfSpeech String @default("other")
+  pronunciation String @default("")
+  example String @default("")
+  exampleTranslation String @default("")
+  nuance String @default("")
+  days Int @default(0)
+  dueAt DateTime @default(now())
+  reviews VocabularyReview[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([groupId, wordKey])
+  @@index([groupId, dueAt])
+}
+model VocabularyReview {
+  id String @id @default(uuid())
+  wordId String
+  word VocabularyWord @relation(fields: [wordId], references: [id], onDelete: Cascade)
+  request String @unique
+  rating Int
+  days Int
+  dueAt DateTime
+  createdAt DateTime @default(now())
+  @@index([wordId, createdAt])
+}

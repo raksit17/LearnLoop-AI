@@ -21,6 +21,7 @@ const tabs = [
   ["home", "ภาพรวม"],
   ["learn", "ห้องเรียน"],
   ["recall", "ฝึกจำ"],
+  ["dictionary", "พจนานุกรม"],
   ["graph", "แผนผัง"],
   ["manage", "จัดการข้อมูล"],
 ];
@@ -122,9 +123,10 @@ async function logout() {
           <button class="light" @click="page = 'manage'">จัดการเป้าหมายและหัวข้อ</button>
         </div>
       </header>
-      <LearningManager v-if="page === 'manage' || !goalId" />
+      <LearningManager v-if="page === 'manage' || (!goalId && page !== 'dictionary')" />
       <template v-else>
-        <Dashboard v-if="page === 'home'" />
+        <Dictionary v-if="page === 'dictionary'" />
+        <Dashboard v-else-if="page === 'home'" />
         <Workspace v-else-if="page === 'learn'" :key="goalId" />
         <Recall v-else-if="page === 'recall'" :key="goalId" />
         <KnowledgeGraph v-else-if="page === 'graph'" :key="goalId" />
