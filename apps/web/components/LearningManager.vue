@@ -256,6 +256,9 @@ watch(() => goals.value.map(g => g.id).join(","), () => {
           </label>
           <button type="submit" :disabled="busy">สร้างเป้าหมาย</button>
         </div>
+        <button type="button" class="manage-inline-link" @click="selectTab('category')">
+          + เพิ่มประเภทใหม่
+        </button>
       </form>
       <form v-else-if="tab === 'topic'" class="manage-create" @submit.prevent="run(createTopic)">
         <h3>+ เพิ่มหัวข้อการเรียน</h3>
