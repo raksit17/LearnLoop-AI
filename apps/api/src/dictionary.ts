@@ -6,6 +6,7 @@ import { z } from "zod";
 import { Database, MemberGuard, parse } from "./core";
 import { nextReview } from "./engine";
 import { normalizeDictionaryKey } from "./dictionary-utils";
+import { dictionarySuggestion } from "./dictionary-ai";
 
 const uuid = z.string().uuid();
 const groupSchema = z.object({
@@ -49,6 +50,36 @@ export class DictionaryController {
       include: {
         words: { orderBy: [{ dueAt: "asc" }, { word: "asc" }] },
       },
+    });
+  }
+
+  @Post("ai/import")
+  async importSuggestion(@Req() req: any, @Body() body: unknown) {
+    const input = parse(dictionarySuggestion, body);
+    const keys = input.words.map(word => normalizeDictionaryKey(word.word));
+    if (new Set(keys).size !== keys.length)
+      throw new BadRequestException("คำศัพท์ในผล AI ซ้ำกัน กรุณาตรวจสอบก่อนบันทึก");
+    const nameKey = normalizeDictionaryKey(input.groupName);
+    // Keep a learner's existing corrected definitions and review history intact.
+    return this.db.$transaction(async tx => {
+      const group = await tx.vocabularyGroup.upsert({
+        where: { userId_nameKey: { userId: req.user, nameKey } },
+        create: {
+          userId: req.user, nameKey,
+          name: input.groupName, description: input.groupDescription,
+        },
+        update: {},
+      });
+      const inserted = await tx.vocabularyWord.createMany({
+        data: input.words.map(word => ({
+          ...word, wordKey: normalizeDictionaryKey(word.word), groupId: group.id,
+        })),
+        skipDuplicates: true,
+      });
+      return {
+        groupId: group.id, inserted: inserted.count,
+        skipped: input.words.length - inserted.count,
+      };
     });
   }
 
