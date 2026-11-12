@@ -5,8 +5,9 @@ import { z } from "zod";
 import { Database, digest, MemberGuard, parse } from "./core";
 
 import { findExercise, library, skills, drill } from "./coding-exercises";
+import { customExercise, ownedExercise } from "./coding-owned";
 import { coach, kinds } from "./coding-coach";
-const exerciseId = z.string().max(90).refine(value => !!findExercise(value));
+const exerciseId = z.string().min(1).max(90);
 const result = z.object({
   runId: z.string().uuid(),
   answer: z.string().min(1).max(64000),
@@ -23,6 +24,7 @@ export class CodingController {
   @UseGuards(MemberGuard)
   async issue(@Req() req: any, @Body() body: unknown) {
     const { exercise } = parse(z.object({ exercise: exerciseId }), body);
+    if (!(await ownedExercise(this.db, req.user, exercise))) throw new NotFoundException("ไม่พบโจทย์");
     const token = randomBytes(32).toString("hex");
     const file = await this.db.codingFile.create({
       data: { userId: req.user, exercise, digest: digest(token) },
@@ -35,8 +37,9 @@ export class CodingController {
   async submit(@Headers("authorization") auth: string | undefined, @Body() body: unknown) {
     const token = /^Bearer ([a-f0-9]{64})$/.exec(auth ?? "")?.[1];
     if (!token) throw new UnauthorizedException();
-    const file = await this.db.codingFile.findUnique({ where: { digest: digest(token) }, select: { id: true } });
+    const file = await this.db.codingFile.findUnique({ where: { digest: digest(token) }, select: { id: true, userId: true, exercise: true } });
     if (!file) throw new UnauthorizedException();
+    if (!(await ownedExercise(this.db, file.userId, file.exercise))) throw new NotFoundException("ไม่พบโจทย์");
     const data = parse(result, body);
     if (data.failedCases && (new Set(data.failedCases).size !== data.total - data.passed || new Set(data.failedCases).size !== data.failedCases.length)) throw new BadRequestException('ผลรายกรณีไม่ตรงกับคะแนน');
     const where = { fileId_runId: { fileId: file.id, runId: data.runId } };
@@ -59,7 +62,9 @@ export class CodingController {
     if (!row) throw new NotFoundException();
     const cached = row.tutorNotes.find(note => note.kind === kind);
     if (cached) return cached.content;
-    const content = await coach(kind, findExercise(row.file.exercise)!, row);
+    const exercise = await ownedExercise(this.db, req.user, row.file.exercise);
+    if (!exercise) throw new NotFoundException("ไม่พบโจทย์");
+    const content = await coach(kind, exercise, row);
     const note = await this.db.codingTutorNote.upsert({
       where: { resultId_kind: {resultId:id, kind} }, create: { resultId:id, kind, content }, update: { }, select:{content:true}
     }).catch(async error => {
@@ -72,6 +77,11 @@ export class CodingController {
   @Get("plan")
   @UseGuards(MemberGuard)
   async plan(@Req() req: any) {
+    const customRows = await this.db.codingExercise.findMany({ where: { userId: req.user }, take: 300 });
+    const customCatalog = customRows.filter(row => Array.isArray(row.cases) && row.cases.length === 3).map(customExercise);
+    const customById = new Map(customCatalog.map(ex => [ex.id, ex]));
+    const lookup = (id: string) => findExercise(id) ?? customById.get(id);
+    const catalog = [...library, ...customCatalog];
     const rows = await this.db.codingResult.findMany({
       where:{file:{userId:req.user}}, orderBy:[{createdAt:"desc"},{id:"desc"}], take:300,
       select:{file:{select:{exercise:true}}, fileId:true, passed:true, total:true, failedCases:true, createdAt:true,
@@ -83,7 +93,7 @@ export class CodingController {
     const queue = new Map<string, ReturnType<typeof drill>>();
     for (const row of rows) {
       const id = row.file.exercise;
-      const ex = findExercise(id);
+      const ex = lookup(id);
       if (!ex) continue;
       if (!latest.has(id)) latest.set(id, row);
       for (const note of row.tutorNotes) {
@@ -94,17 +104,19 @@ export class CodingController {
       const set = misses.get(ex.skill) ?? new Set<string>();
       set.add(id);
       misses.set(ex.skill, set);
-      for (const index of row.failedCases) {
-        const practice = drill(ex, index);
-        queue.set(practice.id, practice);
+      if (!id.startsWith("custom-")) {
+        for (const index of row.failedCases) {
+          const practice = drill(ex, index);
+          queue.set(practice.id, practice);
+        }
       }
     }
     const open = [...queue.values()].filter(item => {
       const last = latest.get(item.id);
       return !last || last.passed < last.total;
     });
-    const stats = Object.entries(skills).map(([skill,label]) => {
-      const practiced = library.filter(ex => ex.skill === skill && latest.has(ex.id));
+    const stats = Object.entries({ ...skills, custom: "โจทย์ของฉัน" }).map(([skill,label]) => {
+      const practiced = catalog.filter(ex => ex.skill === skill && latest.has(ex.id));
       const independent = practiced.filter(ex => {
         const last = latest.get(ex.id)!;
         return last.passed === last.total && (usedHints.get(ex.id) ?? Infinity) > last.createdAt.getTime();
@@ -115,24 +127,26 @@ export class CodingController {
     const recent = rows.filter(row => !row.file.exercise.startsWith("review-")).slice(0,3);
     const struggling = recent.length >= 2 && recent[0].passed < recent[0].total && recent[1].passed < recent[1].total;
     const level = struggling ? 1 : independent >= 4 ? 3 : independent >= 2 ? 2 : 1;
-    const weakSkill = struggling ? findExercise(recent[0].file.exercise)?.skill : undefined;
-    const pool = library.filter(ex => ex.level === level);
+    const weakSkill = struggling ? lookup(recent[0].file.exercise)?.skill : undefined;
+    const pool = catalog.filter(ex => ex.level === level);
     const recommendation = pool.find(ex => ex.skill === weakSkill && (!latest.has(ex.id) || latest.get(ex.id)!.passed < 3)) ??
       pool.find(ex => !latest.has(ex.id)) ?? pool[0];
     // Previously downloaded review files remain available after mastery.
     const drills = new Map(queue);
     for (const id of latest.keys()) if (id.startsWith("review-")) {
-      const ex = findExercise(id);
+      const ex = lookup(id);
       if (ex) drills.set(id, ex);
     }
-    return { catalog:[...library,...drills.values()], stats, pending:open.map(ex=>ex.id), level,
+    return { catalog:[...catalog,...drills.values()], stats, pending:open.map(ex=>ex.id), level,
       recommendation:recommendation.id, reason:struggling ? "สองรอบล่าสุดยังติดขัด ลองทบทวนพื้นฐาน" :
         "แก้โจทย์ผ่านด้วยตนเอง " + independent + " ข้อ", window:rows.length };
   }
 
   @Get("history/:exercise")
   @UseGuards(MemberGuard)
-  history(@Req() req: any, @Param("exercise") exercise: string) {
+  async history(@Req() req: any, @Param("exercise") exercise: string) {
+    const id = parse(exerciseId, exercise);
+    if (!(await ownedExercise(this.db, req.user, id))) throw new NotFoundException("ไม่พบโจทย์");
     return this.db.codingResult.findMany({
       where: { file: { userId: req.user, exercise: parse(exerciseId, exercise) } },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],

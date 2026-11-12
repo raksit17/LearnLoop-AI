@@ -11,6 +11,7 @@ model User {
   name String
   password String?
   codingFiles CodingFile[]
+  codingExercises CodingExercise[]
   codingPairings CodingPairing[]
   codingDevices CodingDevice[]
   tokens Token[]
@@ -49,6 +50,7 @@ model Topic {
   goal Goal @relation(fields:[goalId],references:[id],onDelete:Cascade)
   title String
   notes String @default("")
+  codingExercises CodingExercise[]
   sources Source[]
   questions Question[]
   sessions StudySession[]
@@ -225,4 +227,22 @@ model CodingDevice {
   expiresAt DateTime
   createdAt DateTime @default(now())
   @@index([userId])
+}
+
+model CodingExercise {
+  id String @id @default(uuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topicId String?
+  topic Topic? @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  title String
+  prompt String
+  hint String @default("")
+  example String @default("")
+  skill String @default("custom")
+  level Int @default(1)
+  cases Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([userId, topicId])
 }
