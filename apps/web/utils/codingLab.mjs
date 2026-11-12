@@ -19,28 +19,24 @@ export const exercises = [
   }
 ];
 
-export function starter(exercise, attempt) {
+export function starter(exercise, attempt, sync) {
   return [
     "import assert from 'node:assert/strict';",
-    "import { writeFileSync } from 'node:fs';",
+    "import { readFileSync, writeFileSync } from 'node:fs';",
+    "import { randomUUID } from 'node:crypto';",
     '',
     '// ' + exercise.prompt,
+    '// BEGIN LEARNLOOP ANSWER',
     'function solve(input) {',
     '  // เขียนคำตอบตรงนี้',
     '}',
+    '// END LEARNLOOP ANSWER',
     '',
     'const cases = ' + JSON.stringify(exercise.cases) + ';',
-    'let passed = 0;',
-    'for (const [input, expected] of cases) {',
-    '  try {',
-    '    assert.deepStrictEqual(solve(structuredClone(input)), expected);',
-    '    passed++;',
-    '  } catch (error) { console.error(input, error.message); }',
-    '}',
-    'const report = { exercise: ' + JSON.stringify(exercise.id) + ', attempt: ' + JSON.stringify(attempt) + ', passed, total: cases.length };',
-    "writeFileSync(new URL('./' + report.exercise + '-result.json', import.meta.url), JSON.stringify(report));",
-    "console.log(passed + '/' + cases.length + ' passed');",
-    'if (passed !== cases.length) process.exitCode = 1;',
+    'const exerciseId = ' + JSON.stringify(exercise.id) + ';',
+    'const attempt = ' + JSON.stringify(attempt) + ';',
+    'const sync = ' + JSON.stringify(sync || null) + ';',
+    runner,
     ''
   ].join('\n');
 }
@@ -58,3 +54,41 @@ export function editorUrl(path, id) {
     index === 0 && /^[a-z]:$/i.test(part) ? part : encodeURIComponent(part)).join('/');
   return 'vscode://file/' + encoded;
 }
+
+const runner = String.raw`const resultPath = new URL('./' + exerciseId + '-result.json', import.meta.url);
+const retry = process.argv.includes('--retry');
+let report;
+if (retry) {
+  report = JSON.parse(readFileSync(resultPath, 'utf8'));
+  if (report.attempt !== attempt || !report.runId) throw Error('ไฟล์ผลไม่ตรงกับรอบนี้ ให้รันโจทย์อีกครั้ง');
+} else {
+  let passed = 0;
+  for (const [input, expected] of cases) {
+    try {
+      assert.deepStrictEqual(await solve(structuredClone(input)), expected);
+      passed++;
+    } catch (error) { console.error(input, error.message); }
+  }
+  const source = readFileSync(new URL(import.meta.url), 'utf8');
+  const answer = /^\/\/ BEGIN LEARNLOOP ANSWER\r?\n([\s\S]*?)^\/\/ END LEARNLOOP ANSWER\r?$/m.exec(source)?.[1]?.trim() || solve.toString();
+  report = { exercise: exerciseId, attempt, runId: randomUUID(), answer, passed, total: cases.length };
+  writeFileSync(resultPath, JSON.stringify(report));
+}
+console.log(report.passed + '/' + report.total + ' passed');
+if (report.passed !== report.total) process.exitCode = 1;
+if (sync) {
+  try {
+    const response = await fetch(sync.url, {
+      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10000),
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + sync.token },
+      body: JSON.stringify(report)
+    });
+    if (!response.ok) throw Error('HTTP ' + response.status);
+    const saved = await response.json();
+    if (!saved.id) throw Error('ไม่ได้รับเลขที่บันทึก');
+    console.log('บันทึกคำตอบและผลเข้า LearnLoop แล้ว');
+  } catch (error) {
+    console.error('ส่งไม่สำเร็จ (' + error.message + ') เก็บผลในเครื่องแล้ว ส่งซ้ำด้วย node "' + process.argv[1] + '" --retry');
+    process.exitCode = 1;
+  }
+}`;
