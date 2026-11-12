@@ -99,7 +99,7 @@ export class CodingCustomController {
       data: { title: b.title, prompt: b.prompt, hint: b.hint, example: b.example, skill: b.skill,
         level: b.level, topicId: b.topicId, cases: b.cases as Prisma.InputJsonValue },
     });
-    return { ...customExercise(row), topicId: row.topicId };
+    return { ...customExercise(row), ready: b.cases.length === 3, topicId: row.topicId };
   }
 
   @Delete(":id")
