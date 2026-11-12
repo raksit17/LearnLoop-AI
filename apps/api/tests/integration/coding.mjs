@@ -1,0 +1,67 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { randomUUID } from 'node:crypto';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import 'reflect-metadata';
+import { NestFactory } from '@nestjs/core';
+import { Module } from '@nestjs/common';
+import { CoreModule, Database, digest } from '../../dist/core.js';
+import { CodingModule } from '../../dist/coding.js';
+import { exercises, starter } from '../../../web/utils/codingLab.mjs';
+
+test('download, run, save, retry and read isolated learner history', async t => {
+  process.env.DEV_AUTH_BYPASS = 'false';
+  class TestApp {}
+  Module({ imports: [CoreModule, CodingModule] })(TestApp);
+  const app = await NestFactory.create(TestApp, { logger: false });
+  await app.listen(0, '127.0.0.1');
+  const db = app.get(Database);
+  const dir = await mkdtemp(join(tmpdir(), 'learnloop-'));
+  const users = [];
+  t.after(async () => {
+    await db.user.deleteMany({ where: { id: { in: users } } });
+    await db.$disconnect();
+    await app.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+  async function member() {
+    const sid = randomUUID();
+    const user = await db.user.create({ data: { identity: sid, name: 'test', tokens: {
+      create: { digest: digest(sid), expires: new Date(Date.now() + 60000) }
+    } } });
+    users.push(user.id);
+    return { cookie: 'sid=' + sid, 'Content-Type': 'application/json' };
+  }
+  const owner = await member();
+  const other = await member();
+  const url = await app.getUrl() + '/coding';
+  const exercise = exercises[0];
+  const history = headers => fetch(url + '/history/' + exercise.id, { headers }).then(r => r.json());
+  const issued = await fetch(url + '/files', { method: 'POST', headers: owner, body: JSON.stringify({ exercise: exercise.id }) });
+  assert.equal(issued.status, 201);
+  const { attempt, token } = await issued.json();
+  const path = join(dir, 'exercise.mjs');
+  const script = starter(exercise, attempt, { url: url + '/submit', token });
+  const run = (...args) => promisify(execFile)(process.execPath, [path, ...args]);
+  await writeFile(path, script);
+  await assert.rejects(run(), error => error.code === 1 && error.stdout.includes('0/3'));
+  assert.equal((await history(owner))[0].passed, 0);
+  await writeFile(path, script.replace('// เขียนคำตอบตรงนี้', 'return [...new Set(input)]'));
+  await run();
+  await Promise.all([run('--retry'), run('--retry')]);
+  const rows = await history(owner);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].passed, 3);
+  assert.match(rows[0].answer, /new Set/);
+  assert.ok(!rows[0].answer.includes(token));
+  assert.deepEqual(await history(other), []);
+  assert.equal((await fetch(url + '/history/' + exercise.id)).status, 401);
+  const body = await readFile(join(dir, exercise.id + '-result.json'), 'utf8');
+  const post = (bearer, body) => fetch(url + '/submit', { method: 'POST', headers: { authorization: 'Bearer ' + bearer, 'Content-Type': 'application/json' }, body });
+  assert.equal((await post(randomUUID(), body)).status, 401);
+  assert.equal((await post(token, JSON.stringify({ ...JSON.parse(body), passed: 4 }))).status, 400);
+});

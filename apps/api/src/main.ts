@@ -5,10 +5,11 @@ import { NestExpressApplication } from "@nestjs/platform-express";
 import { CoreModule } from "./core";
 import { AuthModule } from "./auth";
 import { LearningModule } from "./learning";
+import { CodingModule } from "./coding";
 import { DictionaryModule } from "./dictionary";
 import { AiModule } from "./jobs";
 import { matchesPublicOrigin } from "./local";
-@Module({ imports: [CoreModule, AuthModule, LearningModule, DictionaryModule, AiModule] })
+@Module({ imports: [CoreModule, AuthModule, LearningModule, DictionaryModule, CodingModule, AiModule] })
 class AppModule {}
 async function main() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);

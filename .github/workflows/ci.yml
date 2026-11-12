@@ -9,6 +9,15 @@ jobs:
     defaults:
       run:
         working-directory: apps/api
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: learnloop
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       DATABASE_URL: postgresql://test:test@localhost:5432/learnloop
     steps:
@@ -22,6 +31,8 @@ jobs:
       - run: npx prisma validate
       - run: npm run build
       - run: npm test
+      - run: npx prisma migrate deploy
+      - run: node --test tests/integration/coding.mjs
 
   web:
     runs-on: ubuntu-latest

@@ -10,6 +10,7 @@ model User {
   identity String @unique
   name String
   password String?
+  codingFiles CodingFile[]
   tokens Token[]
   goals Goal[]
   goalCategories GoalCategory[]
@@ -167,4 +168,26 @@ model VocabularyReview {
   dueAt DateTime
   createdAt DateTime @default(now())
   @@index([wordId, createdAt])
+}
+
+model CodingFile {
+  id String @id @default(uuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exercise String
+  digest String @unique
+  results CodingResult[]
+  @@index([userId, exercise])
+}
+model CodingResult {
+  id String @id @default(uuid())
+  fileId String
+  file CodingFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  runId String
+  answer String
+  passed Int
+  total Int
+  createdAt DateTime @default(now())
+  @@unique([fileId, runId])
+  @@index([fileId, createdAt])
 }
