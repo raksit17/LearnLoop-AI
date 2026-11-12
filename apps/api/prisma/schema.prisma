@@ -11,6 +11,8 @@ model User {
   name String
   password String?
   codingFiles CodingFile[]
+  codingPairings CodingPairing[]
+  codingDevices CodingDevice[]
   tokens Token[]
   goals Goal[]
   goalCategories GoalCategory[]
@@ -186,6 +188,7 @@ model CodingResult {
   runId String
   failedCases Int[] @default([])
   tutorNotes CodingTutorNote[]
+  reports Json @default("[]")
   answer String
   passed Int
   total Int
@@ -201,4 +204,25 @@ model CodingTutorNote {
   content Json
   createdAt DateTime @default(now())
   @@id([resultId, kind])
+}
+
+model CodingPairing {
+  id String @id @default(uuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  digest String @unique
+  expiresAt DateTime
+  usedAt DateTime?
+  createdAt DateTime @default(now())
+  @@index([userId])
+}
+model CodingDevice {
+  id String @id @default(uuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  digest String @unique
+  name String @default("VS Code")
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  @@index([userId])
 }

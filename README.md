@@ -111,3 +111,17 @@ docker compose exec api node dist/import-legacy.js /tmp/learnloop.sqlite
 - \`POST /v1/dictionary/ai/import\` รับข้อมูลที่ยืนยันแล้วจาก preview และบันทึกแบบ transaction พร้อม skipDuplicates; ไม่มีการเพิ่ม dependency และไม่มี migration ใหม่
 
 ข้อมูลจาก AI อาจไม่ถูกต้อง โดยเฉพาะ IPA, ความแตกต่างเชิงนัย และคำพ้องที่ใช้แทนกันไม่ได้ในบางบริบท จึงต้องตรวจทานก่อนบันทึก รุ่นนี้ใช้ Ollama ในเครื่องและไม่เรียกเว็บพจนานุกรมภายนอก
+
+## VS Code Extension — ฝึกเขียนโค้ดโดยไม่ดาวน์โหลดโจทย์
+
+เมนู **ฝึกเขียนโค้ด** รองรับโหมดใหม่แบบซิงก์กับ VS Code ผ่าน `apps/vscode-extension` (ยังคงใช้โหมดดาวน์โหลด `.mjs` แบบเดิมได้)
+
+1. ติดตั้ง Node.js 22 และ VS Code 1.95+ จากนั้นเข้าโฟลเดอร์ `apps/vscode-extension` แล้วรัน `npm run package` เพื่อสร้าง VSIX (ต้องเชื่อมต่ออินเทอร์เน็ตครั้งแรกเพื่อเรียก `@vscode/vsce`).
+2. ใน VS Code เปิด Command Palette → **Extensions: Install from VSIX...** → เลือกไฟล์ `learnloop-codelab-0.1.0.vsix`.
+3. เปิด LearnLoop ที่ `http://localhost:4318` → **ฝึกเขียนโค้ด** → **เชื่อม VS Code** → กดลิงก์จับคู่ (หรือคัดลอกรหัสไปใส่ที่คำสั่ง **LearnLoop: Connect to LearnLoop AI**).
+4. เลือกโจทย์ เช่น **รับมือ Promise rejection** แล้วกด **เปิดโจทย์ใน VS Code** จะได้เอกสาร Untitled พร้อมฟังก์ชัน `solve(input, lookup)` โดยไม่ต้องดาวน์โหลดไฟล์โจทย์.
+5. เขียนโค้ดเอง → เลือก **LearnLoop: Run Tests and Sync Results** จาก Command Palette หรือแถบสถานะใน VS Code → ดูผลผ่าน/ไม่ผ่านแต่ละกรณีใน Output และประวัติบนเว็บ (หน้าเว็บรีเฟรชทุก 5 วินาที).
+6. หากส่งผลไม่สำเร็จ เลือกคำสั่ง **LearnLoop: Retry Sync** เพื่อส่งผลที่ค้างไว้โดยใช้ runId เดิม
+
+ระบบทดสอบในเครื่องเมื่อผู้เรียนกดรันเท่านั้น ไม่อ่านข้อความทุกครั้งที่พิมพ์ โค้ดและผลจะส่งให้ LearnLoop ผ่าน API ที่ `localhost`; การจับคู่เป็นรหัสครั้งเดียวอายุ 10 นาที Token อุปกรณ์อายุ 30 วัน เก็บใน VS Code SecretStorage. **Node vm ไม่ใช่ security sandbox** ให้รันเฉพาะโค้ดที่เชื่อถือและใช้ Workspace Trust.
+

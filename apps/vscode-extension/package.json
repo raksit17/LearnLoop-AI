@@ -1,0 +1,51 @@
+{
+  "name": "learnloop-codelab",
+  "displayName": "LearnLoop CodeLab",
+  "description": "Learn coding with LearnLoop AI, run local tests and sync results without downloading exercise files.",
+  "publisher": "learnloop",
+  "version": "0.1.0",
+  "private": false,
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Education",
+    "Other"
+  ],
+  "activationEvents": [
+    "onUri"
+  ],
+  "main": "./src/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "learnloop.connect",
+        "title": "LearnLoop: Connect to LearnLoop AI"
+      },
+      {
+        "command": "learnloop.openExercise",
+        "title": "LearnLoop: Open Coding Exercise"
+      },
+      {
+        "command": "learnloop.runTests",
+        "title": "LearnLoop: Run Tests and Sync Results"
+      },
+      {
+        "command": "learnloop.retrySync",
+        "title": "LearnLoop: Retry Sync"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "learnloop.runTests",
+          "group": "navigation@5"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.cjs",
+    "package": "npx --yes @vscode/vsce package --no-dependencies"
+  }
+}

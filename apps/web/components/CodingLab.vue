@@ -13,6 +13,31 @@ const path = ref('');
 const notice = ref('');
 const { api } = useLoop();
 const downloading = ref(false);
+const pairing = ref(null);
+const pairingReady = ref(false);
+const pairingError = ref('');
+const pairLink = computed(() => pairing.value
+  ? 'vscode://learnloop.learnloop-codelab/connect?code=' + encodeURIComponent(pairing.value.code)
+    + '&base=' + encodeURIComponent(location.origin)
+  : '');
+const exerciseLink = computed(() =>
+  'vscode://learnloop.learnloop-codelab/exercise?id=' + encodeURIComponent(selected.value)
+    + '&base=' + encodeURIComponent(typeof location === 'undefined' ? 'http://localhost:4318' : location.origin));
+async function pairWithVSCode() {
+  pairingError.value = '';
+  pairingReady.value = false;
+  try { pairing.value = await api('coding/pair/start', {}); }
+  catch (error) { pairingError.value = error.message; }
+}
+async function checkPairing() {
+  if (!pairing.value || pairingReady.value) return;
+  try {
+    const status = await api('coding/pair/status/' + pairing.value.pairingId);
+    pairingReady.value = status.connected;
+    if (status.expired && !status.connected) pairingError.value = 'รหัสจับคู่หมดอายุ กดเชื่อมต่อใหม่';
+  } catch (error) { pairingError.value = error.message; }
+}
+
 const history = ref([]);
 const syncError = ref('');
 let planVersion = 0;
@@ -47,7 +72,7 @@ async function refreshHistory() {
 onMounted(() => {
   refreshPlan();
   refreshHistory();
-  timer = setInterval(() => { if (!document.hidden) refreshHistory(); }, 5000);
+  timer = setInterval(() => { if (!document.hidden) { refreshHistory(); checkPairing(); } }, 5000);
 });
 onBeforeUnmount(() => { ++requestVersion; ++planVersion; clearInterval(timer); });
 const storageKey = 'learnloop:coding:v1:' + props.learner;
@@ -137,7 +162,23 @@ function restart() {
       <details :key="selected"><summary>ขอคำใบ้</summary><p>{{ exercise.hint }}</p></details>
     </section>
     <section class="card">
-      <h2>ลงมือทำใน VS Code</h2>
+      <h2>ลงมือทำใน VS Code · ซิงก์อัตโนมัติ</h2>
+      <p>ติดตั้ง LearnLoop CodeLab Extension ครั้งเดียว แล้วเปิดโจทย์นี้ใน VS Code ได้โดยไม่ต้องดาวน์โหลด .mjs หรือจัดการไฟล์ผลเอง</p>
+      <div class="pair-actions">
+        <button type="button" class="light" @click="pairWithVSCode">เชื่อม VS Code</button>
+        <a :href="exerciseLink">เปิดโจทย์ใน VS Code</a>
+      </div>
+      <template v-if="pairing">
+        <strong v-if="pairingReady">VS Code จับคู่สำเร็จแล้ว</strong>
+        <template v-else>
+          <p>รหัสจับคู่แบบใช้ครั้งเดียว (หมดอายุใน 10 นาที) คัดลอกไปใส่คำสั่ง LearnLoop: Connect ใน VS Code หรือกดลิงก์ด้านล่าง</p>
+          <code class="pair-code">{{ pairing.code }}</code>
+          <a :href="pairLink">เชื่อมผ่าน VS Code โดยตรง</a>
+        </template>
+      </template>
+      <p v-if="pairingError" role="alert">{{ pairingError }}</p>
+      <small>จาก VS Code กด LearnLoop: Run Tests and Sync Results ผลรายกรณีจะกลับมาแสดงด้านล่างอัตโนมัติ หากไม่พบ Extension ให้ติดตั้งจาก apps/vscode-extension ตาม README</small>
+      <details><summary>วิธีเดิม: ดาวน์โหลดไฟล์ .mjs และรันผ่าน Terminal</summary>
       <button :disabled="downloading" @click="download">ดาวน์โหลด {{ selected }}.mjs</button>
       <p>เปิดไฟล์ด้วย VS Code หรือวางพาธเต็มของไฟล์ที่ดาวน์โหลดเพื่อเปิดจากหน้านี้</p>
       <label>พาธไฟล์ในเครื่อง<input v-model="path" :placeholder="'C:/Downloads/' + selected + '.mjs'" /></label>
@@ -146,6 +187,7 @@ function restart() {
       <p>เขียนฟังก์ชัน solve แล้วบันทึก เปิด Terminal ในโฟลเดอร์เดียวกับไฟล์ ใช้ Node.js 22 รันคำสั่ง</p>
       <pre>node {{ selected }}.mjs</pre>
       <p>เมื่อรัน ไฟล์นี้จะส่งโค้ดในส่วนคำตอบและคะแนนเข้าบัญชีของคุณอัตโนมัติ แม้ปิดหน้าเว็บแล้ว ไฟล์โจทย์ผูกกับบัญชีของคุณ ควรแชร์เฉพาะโค้ดคำตอบ</p>
+      </details>
       <details><summary>นำเข้า JSON จากไฟล์โจทย์รุ่นเดิม</summary><label>นำเข้าผล {{ selected }}-result.json จากโฟลเดอร์เดิม
         <input type="file" accept=".json" @change="readReport" />
       </label>
@@ -160,6 +202,15 @@ function restart() {
       <details v-for="row in history" :key="row.id">
         <summary>{{ new Date(row.createdAt).toLocaleString('th-TH') }} · ผ่าน {{ row.passed }}/{{ row.total }}</summary>
         <pre>{{ row.answer }}</pre>
+        <div v-if="row.reports?.length" class="case-reports">
+          <h3>Test Cases รายกรณี</h3>
+          <ul>
+            <li v-for="test in row.reports" :key="test.index">
+              <strong>{{ test.passed ? 'ผ่าน' : 'ไม่ผ่าน' }} · Case {{ test.index + 1 }}</strong>
+              <span v-if="!test.passed"> · Expected: {{ JSON.stringify(test.expected) }} · Actual: {{ JSON.stringify(test.actual) }} <span v-if="test.error">· {{ test.error }}</span></span>
+            </li>
+          </ul>
+        </div>
       </details>
     </section>
     <CodingTutor v-if="history.length" :key="selected" :history="history" :exercise="exercise" @saved="refreshHistory(); refreshPlan()" />
@@ -183,6 +234,9 @@ function restart() {
 <style scoped>
 .coding { display: grid; gap: 1rem; max-width: 52rem; }
 .card { display: grid; gap: .75rem; justify-items: start; }
+.pair-actions { display: flex; gap: .75rem; flex-wrap: wrap; align-items: center; }
+.pair-code { overflow-wrap: anywhere; user-select: all; }
+.case-reports { max-width: 100%; overflow-wrap: anywhere; }
 label, textarea, input, select { width: 100%; }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 </style>
