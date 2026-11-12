@@ -137,7 +137,7 @@ export class CodingController {
       where: { file: { userId: req.user, exercise: parse(exerciseId, exercise) } },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: 10,
-      select: { id: true, fileId: true, createdAt: true, answer: true, passed: true, total: true, failedCases: true, tutorNotes: { select: {kind:true, content:true} } },
+      select: { id: true, fileId: true, createdAt: true, answer: true, passed: true, total: true, failedCases: true, reports: true, tutorNotes: { select: {kind:true, content:true} } },
     });
   }
 }
