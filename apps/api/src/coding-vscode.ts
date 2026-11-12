@@ -4,7 +4,8 @@ import { Prisma } from "@prisma/client";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { Database, digest, MemberGuard, parse } from "./core";
-import { findExercise, library } from "./coding-exercises";
+import { library } from "./coding-exercises";
+import { ownedExercise, customExercise } from "./coding-owned";
 
 const pairCode = z.string().regex(/^[a-f0-9]{32}$/);
 const exerciseId = z.string().min(1).max(90);
@@ -88,14 +89,15 @@ export class CodingVscodeController {
 
   @Get("extension/catalog")
   async catalog(@Headers("authorization") auth?: string) {
-    await this.device(auth);
-    return { exercises: library.map(({ id, title, prompt, skill, level }) => ({ id, title, prompt, skill, level })) };
+    const device = await this.device(auth);
+    const custom = await this.db.codingExercise.findMany({ where: { userId: device.userId }, take: 300 });
+    return { exercises: [...library, ...custom.filter(row => Array.isArray(row.cases) && row.cases.length === 3).map(customExercise)].map(({ id, title, prompt, skill, level }) => ({ id, title, prompt, skill, level })) };
   }
 
   @Get("extension/exercises/:id")
   async exercise(@Headers("authorization") auth: string | undefined, @Param("id") id: string) {
-    await this.device(auth);
-    const ex = findExercise(parse(exerciseId, id));
+    const device = await this.device(auth);
+    const ex = await ownedExercise(this.db, device.userId, parse(exerciseId, id));
     if (!ex) throw new NotFoundException("ไม่พบโจทย์");
     return ex;
   }
@@ -104,7 +106,7 @@ export class CodingVscodeController {
   async submit(@Headers("authorization") auth: string | undefined, @Body() body: unknown) {
     const device = await this.device(auth);
     const data = parse(submissionSchema, body);
-    const exercise = findExercise(data.exerciseId);
+    const exercise = await ownedExercise(this.db, device.userId, data.exerciseId);
     if (!exercise) throw new NotFoundException("ไม่พบโจทย์");
     if (new Set(data.cases.map(c => c.index)).size !== exercise.cases.length)
       throw new BadRequestException("ต้องส่งผลครบทุกกรณีโดยไม่ซ้ำกัน");

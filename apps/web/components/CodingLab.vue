@@ -41,6 +41,12 @@ async function checkPairing() {
 const history = ref([]);
 const syncError = ref('');
 let planVersion = 0;
+async function onCustomChanged(id) {
+  await refreshPlan();
+  if (id && exercises.value.some(item => item.id === id)) selected.value = id;
+  else if (!exercises.value.some(item => item.id === selected.value))
+    selected.value = plan.value?.recommendation || exercises.value[0]?.id || initialExercises[0].id;
+}
 async function refreshPlan() {
   const version = ++planVersion;
   try {
@@ -135,6 +141,7 @@ function restart() {
 <template>
   <section class="coding">
     <h1>ฝึกเขียนโค้ด</h1>
+    <CodingExerciseManager @changed="onCustomChanged" />
     <section v-if="plan" class="card">
       <h2>แผนฝึกของคุณ</h2>
       <p>{{ plan.reason }} · ระดับที่แนะนำ {{ ['','Beginner','Intermediate','Advanced'][plan.level] }}</p>

@@ -34,6 +34,7 @@ jobs:
       - run: npx prisma migrate deploy
       - run: node --test tests/integration/coding.mjs
       - run: node --test tests/integration/vscode.mjs
+      - run: node --test tests/integration/custom-coding.mjs
 
   web:
     runs-on: ubuntu-latest
