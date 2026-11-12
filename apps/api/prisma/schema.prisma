@@ -184,10 +184,21 @@ model CodingResult {
   fileId String
   file CodingFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
   runId String
+  failedCases Int[] @default([])
+  tutorNotes CodingTutorNote[]
   answer String
   passed Int
   total Int
   createdAt DateTime @default(now())
   @@unique([fileId, runId])
   @@index([fileId, createdAt])
+}
+
+model CodingTutorNote {
+  resultId String
+  result CodingResult @relation(fields: [resultId], references: [id], onDelete: Cascade)
+  kind String
+  content Json
+  createdAt DateTime @default(now())
+  @@id([resultId, kind])
 }
