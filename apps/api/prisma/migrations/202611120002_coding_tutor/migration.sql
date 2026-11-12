@@ -1,0 +1,8 @@
+ALTER TABLE "CodingResult" ADD COLUMN "failedCases" INTEGER[] NOT NULL DEFAULT ARRAY[]::INTEGER[];
+CREATE TABLE "CodingTutorNote" (
+  "resultId" TEXT NOT NULL REFERENCES "CodingResult"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "kind" TEXT NOT NULL,
+  "content" JSONB NOT NULL,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY ("resultId", "kind")
+);

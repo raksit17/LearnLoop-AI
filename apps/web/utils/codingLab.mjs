@@ -26,8 +26,14 @@ export function starter(exercise, attempt, sync) {
     "import { randomUUID } from 'node:crypto';",
     '',
     '// ' + exercise.prompt,
+    ...(exercise.skill === 'async' ? [
+      'async function lookup(id) {',
+      "  if (id < 0) throw Error('database unavailable');",
+      "  return ({1:'Ada', 3:'Lin'})[id] ?? null;",
+      '}'
+    ] : []),
     '// BEGIN LEARNLOOP ANSWER',
-    'function solve(input) {',
+    exercise.skill === 'async' ? 'async function solve(input) {' : 'function solve(input) {',
     '  // เขียนคำตอบตรงนี้',
     '}',
     '// END LEARNLOOP ANSWER',
@@ -63,15 +69,16 @@ if (retry) {
   if (report.attempt !== attempt || !report.runId) throw Error('ไฟล์ผลไม่ตรงกับรอบนี้ ให้รันโจทย์อีกครั้ง');
 } else {
   let passed = 0;
-  for (const [input, expected] of cases) {
+  const failedCases = [];
+  for (const [index, [input, expected]] of cases.entries()) {
     try {
       assert.deepStrictEqual(await solve(structuredClone(input)), expected);
       passed++;
-    } catch (error) { console.error(input, error.message); }
+    } catch (error) { failedCases.push(index); console.error(input, error?.message ?? error); }
   }
   const source = readFileSync(new URL(import.meta.url), 'utf8');
   const answer = /^\/\/ BEGIN LEARNLOOP ANSWER\r?\n([\s\S]*?)^\/\/ END LEARNLOOP ANSWER\r?$/m.exec(source)?.[1]?.trim() || solve.toString();
-  report = { exercise: exerciseId, attempt, runId: randomUUID(), answer, passed, total: cases.length };
+  report = { exercise: exerciseId, attempt, runId: randomUUID(), answer, passed, failedCases, total: cases.length };
   writeFileSync(resultPath, JSON.stringify(report));
 }
 console.log(report.passed + '/' + report.total + ' passed');

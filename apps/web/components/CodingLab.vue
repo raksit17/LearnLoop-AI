@@ -1,11 +1,13 @@
 <script setup>
-import { exercises, starter, validReport, editorUrl } from '../utils/codingLab.mjs';
+import { exercises as initialExercises, starter, validReport, editorUrl } from '../utils/codingLab.mjs';
 
 const props = defineProps({ learner: { type: String, required: true } });
-const selected = ref(exercises[0].id);
-const exercise = computed(() => exercises.find(item => item.id === selected.value));
+const exercises = ref(initialExercises);
+const plan = ref(null);
+const selected = ref(initialExercises[0].id);
+const exercise = computed(() => exercises.value.find(item => item.id === selected.value));
 const blank = () => ({ prediction: '', explanation: '', attempt: '', passed: null, due: 0 });
-const records = reactive(Object.fromEntries(exercises.map(item => [item.id, blank()])));
+const records = reactive(Object.fromEntries(initialExercises.map(item => [item.id, blank()])));
 const draft = computed(() => records[selected.value]);
 const path = ref('');
 const notice = ref('');
@@ -13,6 +15,17 @@ const { api } = useLoop();
 const downloading = ref(false);
 const history = ref([]);
 const syncError = ref('');
+let planVersion = 0;
+async function refreshPlan() {
+  const version = ++planVersion;
+  try {
+    const next = await api('coding/plan');
+    if (version !== planVersion) return;
+    for (const item of next.catalog) records[item.id] ||= blank();
+    exercises.value = next.catalog;
+    plan.value = next;
+  } catch (error) { notice.value = error.message; }
+}
 let requestVersion = 0;
 let timer;
 async function refreshHistory() {
@@ -21,6 +34,7 @@ async function refreshHistory() {
   try {
     const rows = await api('coding/history/' + id);
     if (version !== requestVersion) return;
+    if (rows[0]?.id !== history.value[0]?.id) refreshPlan();
     history.value = rows;
     syncError.value = '';
     const record = records[id];
@@ -31,17 +45,18 @@ async function refreshHistory() {
   }
 }
 onMounted(() => {
+  refreshPlan();
   refreshHistory();
   timer = setInterval(() => { if (!document.hidden) refreshHistory(); }, 5000);
 });
-onBeforeUnmount(() => { ++requestVersion; clearInterval(timer); });
+onBeforeUnmount(() => { ++requestVersion; ++planVersion; clearInterval(timer); });
 const storageKey = 'learnloop:coding:v1:' + props.learner;
 const link = computed(() => editorUrl(path.value, selected.value));
 
 onMounted(() => {
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
-    for (const item of exercises) Object.assign(records[item.id], saved?.[item.id]);
+    for (const [id, entry] of Object.entries(saved || {})) records[id] = Object.assign(blank(), entry);
   } catch { notice.value = 'อ่านประวัติจากเบราว์เซอร์ไม่ได้'; }
   watch(records, () => {
     try { localStorage.setItem(storageKey, JSON.stringify(records)); }
@@ -95,10 +110,21 @@ function restart() {
 <template>
   <section class="coding">
     <h1>ฝึกเขียนโค้ด</h1>
+    <section v-if="plan" class="card">
+      <h2>แผนฝึกของคุณ</h2>
+      <p>{{ plan.reason }} · ระดับที่แนะนำ {{ ['','Beginner','Intermediate','Advanced'][plan.level] }}</p>
+      <button class="light" @click="selected = plan.recommendation">ฝึก {{ exercises.find(item => item.id === plan.recommendation)?.title }}</button>
+      <details v-if="plan.window"><summary>จุดที่ควรฝึกจากการส่ง {{ plan.window }} รอบล่าสุด</summary>
+        <ul><li v-for="stat in plan.stats.filter(s => s.attempted)" :key="stat.skill">{{ stat.label }} · เคยผิด {{ stat.missed }}/{{ stat.attempted }} โจทย์ · ผ่านด้วยตนเอง {{ stat.independent }}</li></ul>
+      </details>
+      <template v-if="plan.pending.length"><h3>โจทย์ทบทวนจากกรณีที่ผิด</h3>
+        <button class="light" v-for="id in plan.pending" :key="id" @click="selected = id">{{ exercises.find(e => e.id === id)?.title }}</button>
+      </template>
+    </section>
     <label>เลือกโจทย์ JavaScript
       <select v-model="selected">
         <option v-for="item in exercises" :key="item.id" :value="item.id">
-          {{ item.title }}{{ records[item.id].due && records[item.id].due <= Date.now() ? ' · ถึงเวลาทบทวน' : '' }}
+          {{ item.title }} {{ ['','· Beginner','· Intermediate','· Advanced'][item.level] }}{{ records[item.id].due && records[item.id].due <= Date.now() ? ' · ถึงเวลาทบทวน' : '' }}
         </option>
       </select>
     </label>
@@ -136,6 +162,7 @@ function restart() {
         <pre>{{ row.answer }}</pre>
       </details>
     </section>
+    <CodingTutor v-if="history.length" :key="selected" :history="history" :exercise="exercise" @saved="refreshHistory(); refreshPlan()" />
     <section class="card">
       <h2>อธิบายและนัดทบทวน</h2>
       <label>ถ้าต้องสอนเพื่อน คุณจะอธิบายวิธีแก้และกรณีขอบอย่างไร?

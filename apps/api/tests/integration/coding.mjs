@@ -1,3 +1,4 @@
+import { createServer } from 'node:http';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { execFile } from 'node:child_process';
@@ -64,4 +65,42 @@ test('download, run, save, retry and read isolated learner history', async t => 
   const post = (bearer, body) => fetch(url + '/submit', { method: 'POST', headers: { authorization: 'Bearer ' + bearer, 'Content-Type': 'application/json' }, body });
   assert.equal((await post(randomUUID(), body)).status, 401);
   assert.equal((await post(token, JSON.stringify({ ...JSON.parse(body), passed: 4 }))).status, 400);
+  const plan = () => fetch(url + '/plan', {headers:owner}).then(r=>r.json());
+  const learning = await plan();
+  assert.equal(learning.pending.length, 3);
+  assert.equal(learning.stats.find(s=>s.skill==='collection').missed, 1);
+  assert.ok(learning.catalog.some(ex=>ex.level===3 && ex.skill==='async'));
+  let calls = 0;
+  const ollama = createServer(async (req,res) => {
+    let data = '';
+    for await (const chunk of req) data += chunk;
+    const { format, messages } = JSON.parse(data);
+    assert.ok(messages[1].content.includes('failedCaseIndices'));
+    const fields = format.properties;
+    const output = fields.hint ? {hint:'ลองไล่ข้อมูลซ้ำทีละตัว'} : fields.steps ? {steps:[{line:1,event:'เรียก solve',variables:'input=[]',stack:'solve',flow:'input → solve'}]} :
+      Object.fromEntries(Object.keys(fields).map(k=>[k,{line:1,feedback:'ตรวจกรณีขอบ'}]));
+    calls++;
+    res.end(JSON.stringify({message:{content:JSON.stringify(output)}}));
+  });
+  await new Promise(resolve=>ollama.listen(0,'127.0.0.1',resolve));
+  process.env.OLLAMA_URL = 'http://127.0.0.1:' + ollama.address().port;
+  t.after(()=>new Promise(resolve=>ollama.close(resolve)));
+  const ask = (headers,kind) => fetch(url + '/coach/' + rows[1].id,{method:'POST',headers,body:JSON.stringify({kind})});
+  assert.equal((await ask(other,'hint1')).status,404);
+  for (const kind of ['hint1','hint2','hint3','review','visual','hint1']) assert.equal((await ask(owner,kind)).status,201);
+  assert.equal(calls,5);
+  assert.equal((await history(owner))[1].tutorNotes.length,5);
+  async function runExercise(ex, answer) {
+    const issue = await fetch(url + '/files',{method:'POST',headers:owner,body:JSON.stringify({exercise:ex.id})}).then(r=>r.json());
+    await writeFile(path,starter(ex,issue.attempt,{url:url+'/submit',token:issue.token}).replace('// เขียนคำตอบตรงนี้',answer));
+    await run();
+  }
+  const drill = learning.catalog.find(ex=>ex.id===learning.pending[0]);
+  await runExercise(drill,'return [...new Set(input)]');
+  assert.ok(!(await plan()).pending.includes(drill.id));
+  await runExercise(learning.catalog.find(ex=>ex.id==='awaitLookup'),'return await lookup(input)');
+  assert.equal((await plan()).level,2);
+  await runExercise(learning.catalog.find(ex=>ex.id==='safeLookup'),"try { return await lookup(input); } catch { return 'retry'; }");
+  await runExercise(learning.catalog.find(ex=>ex.id==='serviceLookup'),"try { const body=await lookup(input); return {status:body?200:404,body}; } catch {return {status:503,body:null};}");
+  assert.equal((await plan()).level,3);
 });
