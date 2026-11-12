@@ -52,6 +52,9 @@ async function request() {
       <h3>ภาพจำลองจาก AI</h3><p>อินพุต {{ JSON.stringify(probe[0]) }} · ผลที่โจทย์คาดหวัง {{ JSON.stringify(probe[1]) }}</p>
       <ol class="flow"><li v-for="(s,i) in content.steps" :key="i"><button class="light" :aria-current="step === i ? 'step' : undefined" @click="step=i">{{ i+1 }} · {{ s.event }}</button></li></ol>
       <strong>ขั้น {{ step+1 }} · บรรทัด {{ current.line }}</strong><pre>{{ row.answer.split('\n')[current.line-1] }}</pre>
+      <figure v-if="current.condition" class="branch"><figcaption>{{ current.condition }}</figcaption>
+        <div><span>↙ จริง</span><p>{{ current.yes }}</p></div><div><span>เท็จ ↘</span><p>{{ current.no }}</p></div>
+      </figure>
       <dl><dt>ค่าตัวแปร</dt><dd>{{ current.variables }}</dd><dt>Call stack</dt><dd>{{ current.stack }}</dd><dt>Data flow</dt><dd>{{ current.flow }}</dd></dl>
     </template>
   </section>
@@ -60,4 +63,7 @@ async function request() {
 .tutor { display:grid; gap:.7rem; } .preserve, pre { white-space:pre-wrap; overflow-wrap:anywhere; }
 .flow { list-style:none; padding:0; } .flow li + li::before { content:'↓'; display:block; margin-left:1rem; }
 [aria-current="step"] { outline:2px solid currentColor; } dt { font-weight:600; } dd { margin:0 0 .6rem; }
+.branch { display:grid; grid-template-columns:1fr 1fr; gap:.6rem; margin:.5rem 0; text-align:center; }
+.branch figcaption { grid-column:1/-1; font-family:monospace; }
+.branch div { padding:.5rem; border:1px solid currentColor; border-radius:.5rem; }
 </style>

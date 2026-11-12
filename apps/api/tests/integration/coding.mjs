@@ -77,7 +77,7 @@ test('download, run, save, retry and read isolated learner history', async t => 
     const { format, messages } = JSON.parse(data);
     assert.ok(messages[1].content.includes('failedCaseIndices'));
     const fields = format.properties;
-    const output = fields.hint ? {hint:'ลองไล่ข้อมูลซ้ำทีละตัว'} : fields.steps ? {steps:[{line:1,event:'เรียก solve',variables:'input=[]',stack:'solve',flow:'input → solve'}]} :
+    const output = fields.hint ? {hint:'ลองไล่ข้อมูลซ้ำทีละตัว'} : fields.steps ? {steps:[{line:1,event:'เรียก solve',variables:'input=[]',stack:'solve',flow:'input → solve',condition:'',yes:'',no:''}]} :
       Object.fromEntries(Object.keys(fields).map(k=>[k,{line:1,feedback:'ตรวจกรณีขอบ'}]));
     calls++;
     res.end(JSON.stringify({message:{content:JSON.stringify(output)}}));

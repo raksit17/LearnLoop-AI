@@ -16,7 +16,7 @@ export async function coach(kind: Kind, ex: Exercise, row: {answer:string; passe
   const lines = row.answer.split(/\r?\n/);
   const line = z.number().int().min(1).max(lines.length);
   const finding = z.object({ line, feedback: text });
-  const step = z.object({ line, event: text, variables: text, stack: text, flow: text });
+  const step = z.object({ line, event: text, variables: text, stack: text, flow: text, condition:z.string().max(500), yes:z.string().max(500), no:z.string().max(500) });
   const source = lines.map((value,index) => (index + 1) + ' ' + value).join('\n');
   const probe = ex.cases[row.failedCases[0] ?? 0];
   const payload = { task: ex.prompt, source, cases: ex.cases, probe, passed:row.passed, total:row.total,
@@ -26,10 +26,10 @@ export async function coach(kind: Kind, ex: Exercise, row: {answer:string; passe
     hint2: "Point to one specific strategy grounded in their code and tests. Do not give code or a complete solution.",
     hint3: "Give a small analogous code example using different input or domain, followed by reasoning. Do not rewrite their submission.",
     review: "Review all five dimensions independently. For each give one real line number and actionable evidence. Mention uncertainty and do not invent security issues. Treat the reported score as test evidence, not proof.",
-    visual: "Simulate the submitted code for probe[0], whose expected output is probe[1]. Describe chronological steps including actual line, branch/loop, variable values, call stack and data movement. Show await/resume or controller/service/database boundaries only when supported. Label inference. Explain early exit or exception if applicable."
+    visual: "Simulate the submitted code for probe[0], whose expected output is probe[1]. Describe chronological steps including actual line, branch/loop, variable values, call stack and data movement. Show await/resume or controller/service/database boundaries only when supported. For an if or loop test, put its expression in condition and both possible destinations in yes and no. Otherwise return empty strings for those three fields. Label inference. Explain early exit or exception if applicable."
   };
   const field = object({ line: integer, feedback: string });
-  const item = object({ line:integer, event:string, variables:string, stack:string, flow:string });
+  const item = object({ line:integer, event:string, variables:string, stack:string, flow:string, condition:string, yes:string, no:string });
   const format = kind === "review" ? object(Object.fromEntries(topics.map(key => [key, field]))) :
     kind === "visual" ? object({steps:{type:"array",items:item,minItems:1,maxItems:10}}) : object({hint:string});
   try {
