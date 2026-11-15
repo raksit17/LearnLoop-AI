@@ -1,6 +1,7 @@
 <script setup>
 const props = defineProps({
   topicId: { type: String, default: '' },
+  request: { type: Object, default: null },
   sources: { type: Array, default: () => [] },
 });
 const emit = defineEmits(['imported']);
@@ -27,6 +28,15 @@ watch(sourceId, value => {
   units.value = [];
   if (value) sourceTitle.value = props.sources.find(s => s.id === value)?.title || '';
 });
+const picker = ref(null);
+defineExpose({ focusSource: () => picker.value?.focus() });
+watch(() => props.request, request => {
+  if (request && props.sources.some(s => s.id === request.id)) {
+    sourceId.value = request.id;
+    message.value = '';
+    error.value = '';
+  }
+}, { immediate: true });
 function firstTitle(text) {
   return (text.split(/\r?\n/).map(s => s.replace(/^#+\s*/, '').replace(/\*\*/g, '').trim())
     .find(s => s.length > 4) || 'บทเรียน Coding').slice(0, 160);
@@ -62,11 +72,14 @@ async function generate() {
   }
   loading.value = true;
   try {
+    const requestedTopic = props.topicId;
+    const requestedSource = sourceId.value;
     const draft = await api('coding/lesson/preview', {
       topicId: props.topicId || null, sourceId: sourceId.value || null,
       text: sourceId.value ? '' : lessonText.value,
       language: language.value, count: Number(count.value),
     });
+    if (requestedTopic !== props.topicId || requestedSource !== sourceId.value) return;
     preview.value = draft;
     units.value = draft.units.map(item => ({
       ...item, casesText: JSON.stringify(item.cases, null, 2),
@@ -112,7 +125,7 @@ async function saveAll() {
     <p>วางเนื้อหาบทเรียน เช่น <strong>บทที่ 1 — PHP Fundamentals</strong> หรือเลือกแหล่งเรียนจากห้องเรียน ระบบจะสร้างบทเรียนย่อยพร้อมโจทย์เขียนโค้ดและ Test Cases ให้ตรวจแก้ก่อนบันทึก</p>
     <div class="inputs">
       <label v-if="topicId && sources.length">เลือกแหล่งเรียนเดิม
-        <select v-model="sourceId">
+        <select ref="picker" v-model="sourceId" :disabled="loading || saving">
           <option value="">วางบทเรียนใหม่ด้านล่าง</option>
           <option v-for="source in sources" :key="source.id" :value="source.id">{{ source.title }}</option>
         </select>

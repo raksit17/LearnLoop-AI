@@ -49,6 +49,21 @@ async function load() {
   catch (e) { error.value = e.message || 'โหลดโจทย์ไม่สำเร็จ'; }
   finally { loading.value = false; }
 }
+const codingSource = useState('coding-source-request', () => '');
+const sourceRequest = ref(null);
+const generator = ref(null);
+watch(codingSource, async id => {
+  if (!id) return;
+  const source = data.value?.sources.find(s => s.id === id);
+  const topic = data.value?.topics.find(t => t.id === source?.topicId);
+  codingSource.value = '';
+  if (!topic || !source) return;
+  selectedGoal.value = topic.goalId;
+  selectedTopic.value = topic.id;
+  sourceRequest.value = { id };
+  await nextTick();
+  generator.value?.focusSource();
+}, { immediate: true });
 onMounted(load);
 
 function reset() {
@@ -189,7 +204,7 @@ function action(fn) {
       <p v-else>เลือกเป้าหมายและหัวข้อด้านบนเพื่อเปิดห้องเรียน หรือไปที่จัดการ Goal / Topic</p>
     </div>
 
-    <CodingLessonGenerator :topic-id="selectedTopic" :sources="sources" @imported="importedLessons" />
+    <CodingLessonGenerator ref="generator" :request="sourceRequest" :topic-id="selectedTopic" :sources="sources" @imported="importedLessons" />
     <form class="exercise-form" @submit.prevent="action(save)">
       <h3>{{ editingId ? 'แก้ไขโจทย์' : 'สร้างโจทย์ใหม่' }}</h3>
       <label>ชื่อโจทย์ (ไม่ใส่ก็ใช้บรรทัดแรกของ Prompt)

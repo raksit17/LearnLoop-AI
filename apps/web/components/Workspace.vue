@@ -11,6 +11,13 @@ const {
     message,
   } = useLoop(),
   { busy, run } = useAction();
+const { page } = useLoop();
+const codingSource = useState<string>("coding-source-request", () => "");
+function openCoding() {
+  if (!source.value) return;
+  codingSource.value = source.value.id;
+  page.value = "coding";
+}
 const topic = computed(() =>
     topics.value.find((t: any) => t.id === topicId.value),
   ),
@@ -163,6 +170,7 @@ async function generate() {
               </option>
             </select></label
           >
+          <button type="button" :disabled="busy" @click="openCoding">สร้างโจทย์โค้ดจากบทเรียนนี้</button>
           <SourceReader
             :key="source.id + ':' + section"
             :source="source"
