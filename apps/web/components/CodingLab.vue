@@ -153,15 +153,19 @@ function restart() {
         <button class="light" v-for="id in plan.pending" :key="id" @click="selected = id">{{ exercises.find(e => e.id === id)?.title }}</button>
       </template>
     </section>
-    <label>เลือกโจทย์ JavaScript
+    <label>เลือกโจทย์ JavaScript / PHP
       <select v-model="selected">
         <option v-for="item in exercises" :key="item.id" :value="item.id">
-          {{ item.title }} {{ ['','· Beginner','· Intermediate','· Advanced'][item.level] }}{{ records[item.id].due && records[item.id].due <= Date.now() ? ' · ถึงเวลาทบทวน' : '' }}
+          {{ (item.language || 'javascript').toUpperCase() }} · {{ item.title }} {{ ['','· Beginner','· Intermediate','· Advanced'][item.level] }}{{ records[item.id].due && records[item.id].due <= Date.now() ? ' · ถึงเวลาทบทวน' : '' }}
         </option>
       </select>
     </label>
     <section class="card">
-      <h2>{{ exercise.title }}</h2>
+      <h2>{{ exercise.title }} <small>· {{ (exercise.language || 'javascript').toUpperCase() }}</small></h2>
+      <details v-if="exercise.lesson" open>
+        <summary>เนื้อหาบทเรียนย่อย · เรียนก่อนทำโจทย์</summary>
+        <p class="mini-lesson">{{ exercise.lesson }}</p>
+      </details>
       <p>{{ exercise.prompt }}</p><pre>{{ exercise.example }}</pre>
       <label>ก่อนเปิดตัวแก้ไข ลองเขียนขั้นตอนจากความจำและคิดกรณีขอบหนึ่งกรณี
         <textarea v-model="draft.prediction" rows="3" />
@@ -170,7 +174,8 @@ function restart() {
     </section>
     <section class="card">
       <h2>ลงมือทำใน VS Code · ซิงก์อัตโนมัติ</h2>
-      <p>ติดตั้ง LearnLoop CodeLab Extension ครั้งเดียว แล้วเปิดโจทย์นี้ใน VS Code ได้โดยไม่ต้องดาวน์โหลด .mjs หรือจัดการไฟล์ผลเอง</p>
+      <p>ติดตั้ง LearnLoop CodeLab Extension ครั้งเดียว แล้วเปิดโจทย์นี้ใน VS Code ได้โดยไม่ต้องดาวน์โหลดไฟล์เอง</p>
+      <p v-if="exercise.language === 'php'"><strong>โจทย์ PHP 8+:</strong> ต้องติดตั้ง PHP CLI บน Windows และตรวจว่า <code>php -v</code> รันได้ใน VS Code Terminal ก่อนกด Run Tests</p>
       <div class="pair-actions">
         <button type="button" class="light" @click="pairWithVSCode">เชื่อม VS Code</button>
         <a :href="exerciseLink">เปิดโจทย์ใน VS Code</a>
@@ -185,7 +190,7 @@ function restart() {
       </template>
       <p v-if="pairingError" role="alert">{{ pairingError }}</p>
       <small>จาก VS Code กด LearnLoop: Run Tests and Sync Results ผลรายกรณีจะกลับมาแสดงด้านล่างอัตโนมัติ หากไม่พบ Extension ให้ติดตั้งจาก apps/vscode-extension ตาม README</small>
-      <details><summary>วิธีเดิม: ดาวน์โหลดไฟล์ .mjs และรันผ่าน Terminal</summary>
+      <details v-if="exercise.language !== 'php'"><summary>วิธีเดิม: ดาวน์โหลดไฟล์ .mjs และรันผ่าน Terminal</summary>
       <button :disabled="downloading" @click="download">ดาวน์โหลด {{ selected }}.mjs</button>
       <p>เปิดไฟล์ด้วย VS Code หรือวางพาธเต็มของไฟล์ที่ดาวน์โหลดเพื่อเปิดจากหน้านี้</p>
       <label>พาธไฟล์ในเครื่อง<input v-model="path" :placeholder="'C:/Downloads/' + selected + '.mjs'" /></label>
@@ -195,7 +200,7 @@ function restart() {
       <pre>node {{ selected }}.mjs</pre>
       <p>เมื่อรัน ไฟล์นี้จะส่งโค้ดในส่วนคำตอบและคะแนนเข้าบัญชีของคุณอัตโนมัติ แม้ปิดหน้าเว็บแล้ว ไฟล์โจทย์ผูกกับบัญชีของคุณ ควรแชร์เฉพาะโค้ดคำตอบ</p>
       </details>
-      <details><summary>นำเข้า JSON จากไฟล์โจทย์รุ่นเดิม</summary><label>นำเข้าผล {{ selected }}-result.json จากโฟลเดอร์เดิม
+      <details v-if="exercise.language !== 'php'"><summary>นำเข้า JSON จากไฟล์โจทย์รุ่นเดิม</summary><label>นำเข้าผล {{ selected }}-result.json จากโฟลเดอร์เดิม
         <input type="file" accept=".json" @change="readReport" />
       </label>
       </details>
@@ -242,6 +247,7 @@ function restart() {
 .coding { display: grid; gap: 1rem; max-width: 52rem; }
 .card { display: grid; gap: .75rem; justify-items: start; }
 .pair-actions { display: flex; gap: .75rem; flex-wrap: wrap; align-items: center; }
+.mini-lesson { white-space: pre-wrap; line-height: 1.7; }
 .pair-code { overflow-wrap: anywhere; user-select: all; }
 .case-reports { max-width: 100%; overflow-wrap: anywhere; }
 label, textarea, input, select { width: 100%; }

@@ -7,6 +7,7 @@ const { spawn } = require("node:child_process");
 const EXT_BASE = "learnloop.base";
 const TOKEN_KEY = "learnloop.token";
 const RUNNER = path.join(__dirname, "runner.js");
+const phpRunner = require("./php-runner");
 const documents = new Map();
 const output = vscode.window.createOutputChannel("LearnLoop CodeLab");
 
@@ -52,11 +53,24 @@ async function connect(context, code, base) {
 
 async function openExercise(context, id) {
   const ex = await api(context, "extension/exercises/" + encodeURIComponent(id));
-  const isAsync = ex.skill === "async";
-  const starter = [
+  const isPhp = ex.language === "php";
+  const isAsync = ex.skill === "async" && !isPhp;
+  const starter = isPhp ? [
+    "<?php",
     "// LearnLoop Exercise: " + ex.id,
     "// " + ex.title,
-    "// " + ex.prompt,
+    "// " + ex.prompt.replaceAll("\n", " "),
+    "// Example: " + ex.example,
+    "// Implement solve($input); PHP CLI 8+ is required to run tests",
+    "",
+    "function solve($input) {",
+    "    // เขียน PHP ของคุณที่นี่ แล้ว return คำตอบ",
+    "}",
+    "",
+  ].join("\n") : [
+    "// LearnLoop Exercise: " + ex.id,
+    "// " + ex.title,
+    "// " + ex.prompt.replaceAll("\n", " "),
     "// Example: " + ex.example,
     "// Test with: LearnLoop: Run Tests and Sync Results",
     "",
@@ -65,7 +79,7 @@ async function openExercise(context, id) {
     "}",
     "",
   ].join("\n");
-  const doc = await vscode.workspace.openTextDocument({ language: "javascript", content: starter });
+  const doc = await vscode.workspace.openTextDocument({ language: isPhp ? "php" : "javascript", content: starter });
   documents.set(doc.uri.toString(), ex.id);
   await vscode.window.showTextDocument(doc, { preview: false });
   output.appendLine("Opened " + ex.id + " (untitled, no download). Save manually if you want a permanent file.");
@@ -73,7 +87,7 @@ async function openExercise(context, id) {
 
 function exerciseFromDocument(document) {
   return documents.get(document.uri.toString()) ||
-    /^\/\/ LearnLoop Exercise: ([a-zA-Z0-9-]+)/.exec(document.getText())?.[1];
+    /^\/\/ LearnLoop Exercise: ([a-zA-Z0-9-]+)/m.exec(document.getText())?.[1];
 }
 
 function runNode(code, exercise) {
@@ -104,7 +118,7 @@ async function runTests(context) {
   if (!id) throw Error("เปิดไฟล์โจทย์ LearnLoop ก่อน");
   const exercise = await api(context, "extension/exercises/" + encodeURIComponent(id));
   const source = doc.getText();
-  const cases = await runNode(source, exercise);
+  const cases = exercise.language === "php" ? await phpRunner.execute(source, exercise) : await runNode(source, exercise);
   const pass = cases.filter(c => c.passed).length;
   output.clear();
   output.appendLine(exercise.title + " — " + pass + "/" + cases.length + " passed");
@@ -146,7 +160,7 @@ async function activate(context) {
   context.subscriptions.push(vscode.commands.registerCommand("learnloop.openExercise", wrap(async id => {
     if (!id) {
       const catalog = await api(context, "extension/catalog");
-      const picked = await vscode.window.showQuickPick(catalog.exercises.map(ex => ({ label: ex.title, description: ex.skill, detail: ex.prompt, id: ex.id })), { placeHolder: "เลือกโจทย์ LearnLoop" });
+      const picked = await vscode.window.showQuickPick(catalog.exercises.map(ex => ({ label: ex.title, description: (ex.language || "javascript").toUpperCase() + " · " + ex.skill, detail: ex.prompt, id: ex.id })), { placeHolder: "เลือกโจทย์ LearnLoop" });
       if (!picked) return;
       id = picked.id;
     }

@@ -1,6 +1,7 @@
 export type Exercise = {
   id: string; title: string; prompt: string; skill: string; level: number;
   example: string; hint: string; cases: [unknown, unknown][];
+  language?: "javascript" | "php"; lesson?: string;
 };
 export const skills: Record<string, string> = { collection: "ลำดับและข้อมูลซ้ำ", counts: "การนับและรวมข้อมูล", batch: "การแบ่งกลุ่มและกรณีขอบ", async: "Promise และการจัดการข้อผิดพลาด" };
 export const library: Exercise[] = [

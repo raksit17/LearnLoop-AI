@@ -24,7 +24,9 @@ export class CodingController {
   @UseGuards(MemberGuard)
   async issue(@Req() req: any, @Body() body: unknown) {
     const { exercise } = parse(z.object({ exercise: exerciseId }), body);
-    if (!(await ownedExercise(this.db, req.user, exercise))) throw new NotFoundException("ไม่พบโจทย์");
+    const owned = await ownedExercise(this.db, req.user, exercise);
+    if (!owned) throw new NotFoundException("ไม่พบโจทย์");
+    if (owned.language === "php") throw new BadRequestException("โจทย์ PHP ต้องใช้ VS Code Extension เพื่อรัน php CLI");
     const token = randomBytes(32).toString("hex");
     const file = await this.db.codingFile.create({
       data: { userId: req.user, exercise, digest: digest(token) },

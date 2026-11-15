@@ -8,10 +8,11 @@ import { LearningModule } from "./learning";
 import { CodingModule } from "./coding";
 import { CodingVscodeModule } from "./coding-vscode";
 import { CodingCustomController } from "./coding-custom";
+import { CodingLessonController } from "./coding-lesson";
 import { DictionaryModule } from "./dictionary";
 import { AiModule } from "./jobs";
 import { matchesPublicOrigin } from "./local";
-@Module({ controllers: [CodingCustomController], imports: [CoreModule, AuthModule, LearningModule, DictionaryModule, CodingModule, CodingVscodeModule, AiModule] })
+@Module({ controllers: [CodingCustomController, CodingLessonController], imports: [CoreModule, AuthModule, LearningModule, DictionaryModule, CodingModule, CodingVscodeModule, AiModule] })
 class AppModule {}
 async function main() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);

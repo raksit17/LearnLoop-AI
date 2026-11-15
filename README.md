@@ -139,3 +139,21 @@ docker compose exec api node dist/import-legacy.js /tmp/learnloop.sqlite
 - การลบโจทย์จากคลังจะทำให้โจทย์ไม่สามารถเปิดใหม่ได้ แต่ผลที่ส่งไว้ก่อนหน้ายังคงอยู่ใน CodingResult (ไม่ลบข้อมูลประวัติโดยไม่แจ้ง)
 - API: `GET/POST /v1/coding/custom`, `PATCH/DELETE /v1/coding/custom/:id` และ `POST /v1/coding/custom/draft` ทุก endpoint ตรวจสิทธิ์ผู้เรียนและ ownership ของ Topic
 
+
+## แปลงบทเรียนเป็นชุดโจทย์ Coding อัตโนมัติ (PHP 8+ / JavaScript)
+
+เมนู **ฝึกเขียนโค้ด** มีส่วน **สร้างชุดฝึก Coding จากบทเรียนอัตโนมัติ**:
+
+1. เลือก Goal และ Topic จากห้องเรียน เช่น PHP / บทที่ 1 — PHP Fundamentals แล้วเลือกแหล่งเรียนเดิม หรือวางเนื้อหาบทเรียน Markdown/TXT (รองรับ .md / .txt สูงสุด 30,000 ตัวอักษร)
+2. เลือก PHP 8+ หรือ JavaScript และจำนวน 3 หรือ 4 โจทย์ กด **สร้างบทเรียนย่อย + Coding Challenges ด้วย AI** ผ่าน Ollama ในเครื่อง
+3. ตรวจแก้ตัวอย่างบทเรียนย่อย (อธิบายแนวคิด), โจทย์, คำใบ้ และ 3 Test Cases ต่อโจทย์ใน Preview; ยังไม่มีการบันทึกก่อนยืนยัน
+4. กด **ยืนยันและบันทึกชุดฝึกทั้งหมดลง LearnLoop** เพื่อเพิ่ม CodingExercise เชื่อมกับหัวข้อเรียนเดิม ถ้าวางบทเรียนใหม่และเลือก Topic ระบบเก็บเป็น Source ในห้องเรียนด้วย ข้ามการนำเข้าซ้ำตามชื่อหัวข้อ/ภาษา
+5. เลือกโจทย์ใหม่บนหน้า CodeLab แล้วกด **เปิดโจทย์ใน VS Code**; Extension 0.2.0 เปิด Untitled PHP หรือ JavaScript editor พร้อมฟังก์ชัน solve
+6. เขียนฟังก์ชัน solve($input) ใน PHP หรือ solve(input) ใน JavaScript; กด LearnLoop: Run Tests and Sync Results เพื่อส่งผล Test รายกรณีเข้า LearnLoop และขอ AI Coding Tutor
+
+**PHP CLI 8+ จำเป็นในเครื่องที่รัน VS Code**: ตรวจสอบให้คำสั่ง php -v ใช้งานได้จาก VS Code Terminal ก่อนทดสอบ CodeLab. ไม่ต้องใช้ PHP ใน Docker web/API เพราะโค้ดถูกทดสอบในเครื่องผ่าน Extension. Node vm และ PHP CLI ไม่ใช่ security sandbox — รันเฉพาะโค้ดที่เชื่อถือได้เมื่อผู้ใช้กด Run Tests และอนุญาต Workspace Trust เท่านั้น.
+
+AI สร้างบทเรียนย่อยและโจทย์แบบฉบับร่าง Test Cases อาจผิด ควรตรวจให้ถูกต้องก่อนยืนยัน; โจทย์ PHP เวอร์ชันนี้ใช้ค่า JSON รับเข้าฟังก์ชัน solve($input) ไม่ใช่โหมดรัน PHP ทั้งเว็บ, Laravel หรือระบบฐานข้อมูล
+
+API: POST /v1/coding/lesson/preview, POST /v1/coding/lesson/import, GET /v1/coding/lesson/sources?topicId=... ตรวจสมาชิกและสิทธิ์ใน Topic/Source. Schema CodingExercise มี language และ lesson เพื่อเก็บภาษาและเนื้อหาย่อยโดยไม่กระทบโจทย์ JavaScript เดิม
+
