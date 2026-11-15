@@ -5,7 +5,7 @@ const personal = /^custom-([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0
 
 export function customExercise(row: {
   id: string; title: string; prompt: string; hint: string; example: string;
-  skill: string; level: number; cases: unknown;
+  skill: string; level: number; cases: unknown; language: string; lesson: string;
 }): Exercise {
   return {
     id: "custom-" + row.id,
@@ -13,6 +13,8 @@ export function customExercise(row: {
     prompt: row.prompt,
     hint: row.hint,
     example: row.example,
+    language: row.language === "php" ? "php" : "javascript",
+    lesson: row.lesson,
     skill: row.skill,
     level: row.level,
     cases: row.cases as [unknown, unknown][],

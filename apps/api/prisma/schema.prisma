@@ -237,6 +237,8 @@ model CodingExercise {
   topic Topic? @relation(fields: [topicId], references: [id], onDelete: SetNull)
   title String
   prompt String
+  lesson String @default("")
+  language String @default("javascript")
   hint String @default("")
   example String @default("")
   skill String @default("custom")

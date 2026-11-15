@@ -19,7 +19,7 @@ export async function coach(kind: Kind, ex: Exercise, row: {answer:string; passe
   const step = z.object({ line, event: text, variables: text, stack: text, flow: text, condition:z.string().max(500), yes:z.string().max(500), no:z.string().max(500) });
   const source = lines.map((value,index) => (index + 1) + ' ' + value).join('\n');
   const probe = ex.cases[row.failedCases[0] ?? 0];
-  const payload = { task: ex.prompt, source, cases: ex.cases, probe, passed:row.passed, total:row.total,
+  const payload = { task: ex.prompt, language: ex.language || "javascript", lesson: ex.lesson || "", source, cases: ex.cases, probe, passed:row.passed, total:row.total,
     failedCaseIndices:row.failedCases, ...(ex.skill === "async" ? {lookup:"negative rejects, 1 resolves Ada, 3 resolves Lin, other IDs resolve null"} : {}) };
   const instructions = {
     hint1: "Ask just one short Socratic question about the failure. No answer, pseudocode or code.",

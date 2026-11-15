@@ -15,6 +15,7 @@ const classroomMode = ref('workspace');
 const editingId = ref('');
 const emptyForm = () => ({
   title: '', prompt: '', hint: '', example: '', skill: 'custom', level: 1,
+  language: 'javascript', lesson: '',
   topicId: selectedTopic.value || '', casesText: '',
 });
 const form = reactive(emptyForm());
@@ -59,7 +60,8 @@ function edit(item) {
   editingId.value = item.id;
   Object.assign(form, {
     title: item.title, prompt: item.prompt, hint: item.hint, example: item.example,
-    skill: item.skill, level: item.level, topicId: item.topicId || '',
+    skill: item.skill, level: item.level, language: item.language || 'javascript',
+    lesson: item.lesson || '', topicId: item.topicId || '',
     casesText: item.cases?.length ? JSON.stringify(item.cases, null, 2) : '',
   });
   status.value = 'กำลังแก้ไข ' + item.title + ' — หากเปลี่ยนเงื่อนไข Test ผลเก่าอาจไม่ตรงกับโจทย์เวอร์ชันใหม่';
@@ -92,7 +94,9 @@ async function save() {
   const title = form.title.trim() || form.prompt.trim().split('\n')[0].slice(0, 80);
   const payload = {
     title, prompt: form.prompt.trim(), hint: form.hint.trim(), example: form.example.trim(),
-    skill: form.skill, level: Number(form.level), topicId: form.topicId || null, cases: parseCases(),
+    skill: form.language === 'php' ? 'custom' : form.skill,
+    language: form.language, lesson: form.lesson.trim(),
+    level: Number(form.level), topicId: form.topicId || null, cases: parseCases(),
   };
   const id = editingId.value;
   const path = id ? 'coding/custom/' + id.slice('custom-'.length) : 'coding/custom';
@@ -107,14 +111,20 @@ async function save() {
 async function aiDraft() {
   error.value = ''; status.value = '';
   const response = await api('coding/custom/draft', {
-    prompt: form.prompt.trim(), topicId: form.topicId || null,
+    prompt: form.prompt.trim(), topicId: form.topicId || null, language: form.language,
   });
   Object.assign(form, {
     title: response.title, prompt: response.prompt, hint: response.hint,
-    example: response.example, level: response.level, skill: response.skill,
+    example: response.example, level: response.level, skill: form.language === 'php' ? 'custom' : response.skill,
     casesText: JSON.stringify(response.cases, null, 2),
   });
   status.value = 'AI สร้างโจทย์และ Test Cases ฉบับร่างแล้ว กรุณาตรวจความถูกต้องและกดบันทึก';
+}
+async function importedLessons(saved) {
+  await load();
+  await refresh();
+  status.value = 'นำเข้าชุดฝึก ' + saved.created.length + ' โจทย์แล้ว';
+  emit('changed', saved.created[0] || null);
 }
 async function remove(item) {
   const confirmed = window.prompt('พิมพ์ชื่อโจทย์เพื่อยืนยันการลบถาวร: ' + item.title);
@@ -179,6 +189,7 @@ function action(fn) {
       <p v-else>เลือกเป้าหมายและหัวข้อด้านบนเพื่อเปิดห้องเรียน หรือไปที่จัดการ Goal / Topic</p>
     </div>
 
+    <CodingLessonGenerator :topic-id="selectedTopic" :sources="sources" @imported="importedLessons" />
     <form class="exercise-form" @submit.prevent="action(save)">
       <h3>{{ editingId ? 'แก้ไขโจทย์' : 'สร้างโจทย์ใหม่' }}</h3>
       <label>ชื่อโจทย์ (ไม่ใส่ก็ใช้บรรทัดแรกของ Prompt)
@@ -194,6 +205,12 @@ function action(fn) {
         <small>ใช้ Ollama ในเครื่อง AI สร้างเป็นฉบับร่าง ไม่บันทึกทันที</small>
       </div>
       <div class="form-grid">
+        <label>ภาษา
+          <select v-model="form.language">
+            <option value="javascript">JavaScript</option>
+            <option value="php">PHP 8+</option>
+          </select>
+        </label>
         <label>หัวข้อที่เชื่อมกับห้องเรียน
           <select v-model="form.topicId">
             <option value="">ไม่ผูกกับหัวข้อ</option>
@@ -206,7 +223,7 @@ function action(fn) {
             <option value="collection">Array / Collection</option>
             <option value="counts">Counting / Aggregation</option>
             <option value="batch">Batch / Chunking</option>
-            <option value="async">Promise / Async (มี lookup)</option>
+            <option v-if="form.language !== 'php'" value="async">Promise / Async (มี lookup)</option>
           </select>
         </label>
         <label>ระดับความยาก
@@ -217,6 +234,9 @@ function action(fn) {
           </select>
         </label>
       </div>
+      <label>บทเรียนย่อย (ก่อนฝึกเขียน)
+        <textarea v-model="form.lesson" rows="5" maxlength="3500" placeholder="อธิบายแนวคิดและ Syntax โดยไม่เฉลยโจทย์" />
+      </label>
       <label>คำใบ้ (Hint)
         <textarea v-model="form.hint" rows="2" maxlength="1500" placeholder="ถามนำ โดยไม่เฉลยวิธีทำ" />
       </label>
@@ -248,7 +268,7 @@ function action(fn) {
           <tbody>
             <tr v-for="item in results" :key="item.id">
               <td><strong>{{ item.title }}</strong><small>{{ item.prompt.slice(0, 120) }}</small></td>
-              <td>{{ ['', 'Beginner', 'Intermediate', 'Advanced'][item.level] }}<small>{{ item.ready ? 'พร้อมฝึก' : 'ร่าง · รอ Test Cases' }}</small></td>
+              <td>{{ (item.language || 'javascript').toUpperCase() }} · {{ ['', 'Beginner', 'Intermediate', 'Advanced'][item.level] }}<small>{{ item.ready ? 'พร้อมฝึก' : 'ร่าง · รอ Test Cases' }}</small></td>
               <td><div class="actions">
                 <button type="button" class="light" @click="edit(item)">แก้ไข</button>
                 <button v-if="item.ready" type="button" class="light" @click="emit('changed', item.id)">ฝึกโจทย์นี้</button>

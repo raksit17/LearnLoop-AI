@@ -3,7 +3,7 @@
   "displayName": "LearnLoop CodeLab",
   "description": "Learn coding with LearnLoop AI, run local tests and sync results without downloading exercise files.",
   "publisher": "learnloop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": false,
   "engines": {
     "vscode": "^1.95.0"

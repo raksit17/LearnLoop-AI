@@ -91,7 +91,7 @@ export class CodingVscodeController {
   async catalog(@Headers("authorization") auth?: string) {
     const device = await this.device(auth);
     const custom = await this.db.codingExercise.findMany({ where: { userId: device.userId }, take: 300 });
-    return { exercises: [...library, ...custom.filter(row => Array.isArray(row.cases) && row.cases.length === 3).map(customExercise)].map(({ id, title, prompt, skill, level }) => ({ id, title, prompt, skill, level })) };
+    return { exercises: [...library, ...custom.filter(row => Array.isArray(row.cases) && row.cases.length === 3).map(customExercise)].map(({ id, title, prompt, skill, level, language }) => ({ id, title, prompt, skill, level, language: language || "javascript" })) };
   }
 
   @Get("extension/exercises/:id")
